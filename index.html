@@ -207,46 +207,80 @@
   .skel{background:var(--bg-soft);border-radius:8px;animation:sk 1.4s ease-in-out infinite}
   @keyframes sk{0%,100%{opacity:.55}50%{opacity:1}}
 
-  /* ---------- recent URLs ---------- */
-  .recents{display:none;margin-top:26px}
-  .recents.on{display:block}
-  .recents-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
-  .recents-head span{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-  .link-btn{
+  /* ---------- recent URLs (collapsed by default: costs one line) ---------- */
+  .hint-row{display:flex;align-items:center;gap:12px;min-height:20px}
+  .hint-row .hint{flex:1 1 auto;min-width:0}
+  .recents-toggle{
+    flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;
     background:none;border:0;padding:4px 2px;cursor:pointer;
-    font:inherit;font-size:12.5px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;
+    font:inherit;font-size:12.5px;color:var(--muted);white-space:nowrap;
   }
-  .link-btn:hover{color:var(--danger)}
-  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .recents-toggle:hover{color:var(--accent)}
+  .recents-toggle svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round}
+  .caret{
+    width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;
+    border-top:4px solid currentColor;transition:transform .2s;
+  }
+  .recents-toggle[aria-expanded="true"] .caret{transform:rotate(180deg)}
+
+  .recents{
+    margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:14px;
+    background:var(--bg-soft);animation:drop .18s ease;
+  }
+  @keyframes drop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .chips{
+    display:flex;flex-wrap:wrap;gap:6px;
+    max-height:132px;overflow-y:auto;overscroll-behavior:contain;
+  }
   .chip{
-    display:inline-flex;align-items:center;gap:8px;max-width:100%;
+    display:inline-flex;align-items:baseline;gap:6px;max-width:100%;
     background:var(--surface);border:1px solid var(--line);border-radius:999px;
-    padding:7px 12px;font:inherit;font-size:13px;color:var(--text);cursor:pointer;
+    padding:5px 11px;font:inherit;font-size:12.5px;color:var(--text);cursor:pointer;
     transition:border-color .15s,background .15s;
   }
   .chip:hover{border-color:var(--accent);background:var(--accent-soft)}
-  .chip .fav{
-    width:16px;height:16px;flex:0 0 auto;border-radius:4px;background:var(--bg-soft);
+  .chip .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:min(44vw,220px)}
+  .chip .h{color:var(--muted);font-size:11px;flex:0 0 auto}
+  .recents-foot{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    margin-top:10px;padding-top:9px;border-top:1px solid var(--line);
+    font-size:11.5px;color:var(--muted);
   }
-  .chip .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:min(46vw,260px)}
-  .chip .h{color:var(--muted);font-size:11.5px;flex:0 0 auto}
+  .link-btn{
+    background:none;border:0;padding:2px;cursor:pointer;
+    font:inherit;font-size:11.5px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;
+  }
+  .link-btn:hover{color:var(--danger)}
 
-  /* ---------- share ---------- */
-  .share{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
-  .share-label{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
-    color:var(--muted);margin-bottom:11px}
-  .share-row{display:flex;flex-wrap:wrap;gap:8px}
-  .sbtn{
-    display:inline-flex;align-items:center;gap:7px;
-    background:var(--surface);border:1px solid var(--line);border-radius:11px;
-    padding:9px 13px;min-height:var(--tap);
-    font:inherit;font-size:13px;font-weight:550;color:var(--text);cursor:pointer;
-    transition:border-color .15s,transform .1s;
+  /* ---------- share (compact: icons, label on the copy action only) ---------- */
+  .share{
+    margin-top:20px;padding-top:16px;border-top:1px solid var(--line);
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
   }
-  .sbtn:hover{border-color:var(--accent)}
-  .sbtn:active{transform:scale(.96)}
+  .share-label{
+    font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--muted);margin-right:2px;
+  }
+  .share-row{display:flex;align-items:center;gap:6px;margin-left:auto}
+  .sbtn{
+    display:inline-grid;place-items:center;width:38px;height:38px;
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    color:var(--text);cursor:pointer;transition:border-color .15s,color .15s,transform .1s;
+  }
+  .sbtn:hover{border-color:var(--accent);color:var(--accent)}
+  .sbtn:active{transform:scale(.94)}
   .sbtn svg{width:16px;height:16px;flex:0 0 auto}
-  .sbtn.copy{background:var(--accent-soft);border-color:transparent;color:var(--accent)}
+  .sbtn.copy{
+    width:auto;gap:7px;padding:0 13px;grid-auto-flow:column;
+    background:var(--accent-soft);border-color:transparent;color:var(--accent);
+    font:inherit;font-size:13px;font-weight:600;
+  }
+  @media (max-width:520px){
+    .share{gap:10px}
+    .share-row{margin-left:0;width:100%;justify-content:space-between}
+    .sbtn.copy{flex:1 1 auto}
+  }
 
   .toast{
     position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);
@@ -354,15 +388,22 @@
     </div>
     <button class="primary" id="go" type="submit" disabled>TLDR</button>
   </form>
-  <div class="hint" id="hint">Preparing the on-device model…</div>
+  <div class="hint-row">
+    <div class="hint" id="hint">Preparing the on-device model…</div>
+    <button class="recents-toggle" id="recentsToggle" type="button" aria-expanded="false" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.4V12l3 1.8"/></svg>
+      <span id="recentsLabel">Recent</span>
+      <i class="caret" aria-hidden="true"></i>
+    </button>
+  </div>
   <div class="bar" id="bar"><i id="barFill"></i></div>
 
-  <section class="recents" id="recents">
-    <div class="recents-head">
-      <span id="recentsLabel">Recent links</span>
+  <section class="recents" id="recents" hidden>
+    <div class="chips" id="chips"></div>
+    <div class="recents-foot">
+      <span id="recentsCount"></span>
       <button class="link-btn" id="clearRecents" type="button">Clear all</button>
     </div>
-    <div class="chips" id="chips"></div>
   </section>
 
   <button class="install" id="install" type="button">
@@ -407,44 +448,39 @@
     <p class="swipe-hint" id="swipeHint">Swipe or use ← → to move between cards</p>
 
     <div class="share" id="share">
-      <div class="share-label">Share this TLDR</div>
+      <div class="share-label">Share</div>
       <div class="share-row">
-        <button class="sbtn copy" id="shCopy" type="button">
+        <button class="sbtn copy" id="shCopy" type="button" title="Copy a link that opens these cards">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5.5 15H5a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 5 3.5h8.5A1.5 1.5 0 0 1 15 5v.5"/>
           </svg>
           <span id="shCopyText">Copy link</span>
         </button>
 
-        <button class="sbtn" id="shFacebook" type="button">
+        <button class="sbtn" id="shFacebook" type="button" title="Share on Facebook" aria-label="Share on Facebook">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.9h2.54V9.85c0-2.52 1.5-3.91 3.77-3.91 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.78-1.63 1.57v1.89h2.78l-.45 2.9h-2.33V22c4.78-.76 8.44-4.92 8.44-9.94z"/></svg>
-          Facebook
         </button>
 
-        <button class="sbtn" id="shX" type="button">
+        <button class="sbtn" id="shX" type="button" title="Share on X" aria-label="Share on X">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.53 3h3.17l-6.92 7.91L21.94 21h-6.37l-4.99-6.52L4.87 21H1.7l7.4-8.46L2.06 3h6.53l4.51 5.96L17.53 3zm-1.11 16.06h1.76L7.65 4.84H5.77l10.65 14.22z"/></svg>
-          X
         </button>
 
-        <button class="sbtn" id="shInstagram" type="button">
+        <button class="sbtn" id="shInstagram" type="button" title="Share to Instagram" aria-label="Share to Instagram">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1.2" fill="currentColor" stroke="none"/>
           </svg>
-          Instagram
         </button>
 
-        <button class="sbtn" id="shSms" type="button">
+        <button class="sbtn" id="shSms" type="button" title="Share by SMS" aria-label="Share by SMS">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20.5 11.6c0 3.9-3.8 7-8.5 7-1 0-2-.14-2.9-.4L4 20l1.06-3.4A6.7 6.7 0 0 1 3.5 11.6c0-3.9 3.8-7 8.5-7s8.5 3.1 8.5 7z"/>
           </svg>
-          SMS
         </button>
 
-        <button class="sbtn" id="shEmail" type="button">
+        <button class="sbtn" id="shEmail" type="button" title="Share by email" aria-label="Share by email">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.8 6.5l8.2 6 8.2-6"/>
           </svg>
-          Email
         </button>
       </div>
     </div>
@@ -502,6 +538,7 @@ const els = {
   docTitle:$('docTitle'), readtime:$('readtime'), prev:$('prev'), next:$('next'),
   railLabel:$('railLabel'), swipeHint:$('swipeHint'),
   recents:$('recents'), recentsLabel:$('recentsLabel'), chips:$('chips'),
+  recentsToggle:$('recentsToggle'), recentsCount:$('recentsCount'),
   clearRecents:$('clearRecents'), share:$('share'), toast:$('toast'),
   tags:$('tags'), tagRow:$('tagRow'), tagsHint:$('tagsHint'), tagsReset:$('tagsReset'),
 };
@@ -925,6 +962,7 @@ function build(summary, meta){
 
   shared = { summary, meta };          // what the share buttons will encode
   els.share.style.display = 'block';
+  refreshShareUrl();                   // ready before anyone can click a share button
 
   renderCards(cards);
   els.rail.scrollTo({ left: 0 });
@@ -1063,12 +1101,22 @@ function rememberUrl(url, title){
   renderRecents();
 }
 
+// Collapsed by default. The list is one line of chrome until asked for, so a
+// long history never pushes the summary down the page.
+function setRecentsOpen(open){
+  els.recents.hidden = !open;
+  els.recentsToggle.setAttribute('aria-expanded', String(open));
+}
+
 function renderRecents(){
   const list = loadRecents();
-  els.recents.classList.toggle('on', list.length > 0);
-  if (!list.length) return;
+  els.recentsToggle.hidden = list.length === 0;
+  if (!list.length){ setRecentsOpen(false); return; }
 
-  els.recentsLabel.textContent = `Recent links (${list.length})`;
+  els.recentsLabel.textContent = `Recent (${list.length})`;
+  els.recentsCount.textContent = list.length === 1
+    ? '1 link' : `${list.length} links · newest first`;
+
   els.chips.replaceChildren(...list.map((r) => {
     let host = r.url;
     try { host = new URL(r.url).hostname.replace(/^www\./,''); } catch {}
@@ -1082,24 +1130,31 @@ function renderRecents(){
     t.className = 't';
     t.textContent = r.title || host;
 
-    const h = document.createElement('span');
-    h.className = 'h';
-    h.textContent = host;
-
     b.append(t);
-    if (r.title) b.append(h);
+    if (r.title){
+      const h = document.createElement('span');
+      h.className = 'h';
+      h.textContent = host;
+      b.append(h);
+    }
     b.addEventListener('click', () => {
       els.url.value = r.url;
+      setRecentsOpen(false);          // get out of the way of the result
       els.form.requestSubmit();
     });
     return b;
   }));
 }
 
+els.recentsToggle.addEventListener('click', () => {
+  setRecentsOpen(els.recents.hidden);
+});
+
 els.clearRecents.addEventListener('click', () => {
   if (!confirm('Clear all recent links? This cannot be undone.')) return;
   try { localStorage.removeItem(RECENTS_KEY); } catch {}
   renderRecents();
+  setRecentsOpen(false);
   toast('Recent links cleared');
 });
 
@@ -1231,9 +1286,24 @@ async function inflate(bytes){
 // the summary locally instead of seeing nothing.
 const MAX_FRAGMENT = 1800;
 
+// Popup blockers and navigator.share() only honour a call made DURING a user
+// gesture. Awaiting the (async) compression first ends that activation window,
+// and the browser silently drops the popup — the button appears dead. So the
+// link is built ahead of time and the handlers stay synchronous.
+let shareUrl = null;
+
+const shareBase = () => shared
+  ? location.origin + location.pathname + '?u=' + encodeURIComponent(shared.meta.url)
+  : location.href;
+
+async function refreshShareUrl(){
+  shareUrl = shareBase();          // usable immediately, upgraded once packed
+  try { shareUrl = await shareLink(); } catch { /* keep the base link */ }
+}
+
 async function shareLink(){
   if (!shared) return location.href;
-  const base = location.origin + location.pathname + '?u=' + encodeURIComponent(shared.meta.url);
+  const base = shareBase();
   if (!('CompressionStream' in window)) return base;
   try {
     const payload = JSON.stringify({
@@ -1272,7 +1342,7 @@ async function readSharedSummary(){
 }
 
 async function copyLink(){
-  const link = await shareLink();
+  const link = shareUrl || shareBase();
   try {
     await navigator.clipboard.writeText(link);
     return true;
@@ -1290,46 +1360,47 @@ async function copyLink(){
 }
 
 const shareText = () => shared ? `TLDR: ${shared.meta.title || 'this page'}` : 'TLDR Me';
+const link = () => shareUrl || shareBase();
 const pop = (u) => window.open(u, '_blank', 'noopener,noreferrer');
 
 $('shCopy').addEventListener('click', async () => {
   toast(await copyLink() ? 'Link copied — it opens with these cards' : 'Could not copy the link');
 });
 
-$('shFacebook').addEventListener('click', async () => {
-  pop('https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(await shareLink()));
+$('shFacebook').addEventListener('click', () => {
+  pop('https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(link()));
 });
 
-$('shX').addEventListener('click', async () => {
+$('shX').addEventListener('click', () => {
   const u = new URL('https://twitter.com/intent/tweet');
   u.searchParams.set('text', shareText());
-  u.searchParams.set('url', await shareLink());
+  u.searchParams.set('url', link());
   pop(u.toString());
 });
 
 // Instagram has no link-share endpoint for the web — the only real paths are
 // the OS share sheet (where Instagram is a target) or pasting the link yourself.
-$('shInstagram').addEventListener('click', async () => {
-  const url = await shareLink();
+// navigator.share() must also be called synchronously inside the gesture.
+$('shInstagram').addEventListener('click', () => {
   if (navigator.share){
-    try { await navigator.share({ title:'TLDR Me', text: shareText(), url }); return; } catch { return; }
+    navigator.share({ title:'TLDR Me', text: shareText(), url: link() }).catch(() => {});
+    return;
   }
-  toast(await copyLink()
+  copyLink().then(ok => toast(ok
     ? 'Link copied — Instagram has no web share, so paste it into a story or bio'
-    : 'Could not copy the link');
+    : 'Could not copy the link'));
 });
 
-$('shSms').addEventListener('click', async () => {
-  const body = encodeURIComponent(`${shareText()} ${await shareLink()}`);
+$('shSms').addEventListener('click', () => {
+  const body = encodeURIComponent(`${shareText()} ${link()}`);
   // iOS wants sms:&body=, Android wants sms:?body=. Getting this wrong opens an
   // empty message.
   location.href = isIOS ? `sms:&body=${body}` : `sms:?body=${body}`;
 });
 
-$('shEmail').addEventListener('click', async () => {
-  const link = await shareLink();
+$('shEmail').addEventListener('click', () => {
   const body = encodeURIComponent(
-    `${shared?.summary.tldr || ''}\n\nRead the TLDR: ${link}\n\nOriginal: ${shared?.meta.url || ''}`);
+    `${shared?.summary.tldr || ''}\n\nRead the TLDR: ${link()}\n\nOriginal: ${shared?.meta.url || ''}`);
   location.href = `mailto:?subject=${encodeURIComponent(shareText())}&body=${body}`;
 });
 
