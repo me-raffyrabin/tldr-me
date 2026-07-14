@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tldr-me",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "-l", "8123", "/Users/raffy/Documents/Raffy/active-projects/tldr-me"],
+      "port": 8123
+    }
+  ]
+}
