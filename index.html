@@ -140,6 +140,30 @@
   .src .host{font-size:12px;color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line)}
   .doc-title{font-size:20px;font-weight:650;letter-spacing:-.02em;margin:0 0 18px;line-height:1.3}
 
+  /* ---------- tags ---------- */
+  .tags{display:none;margin:-6px 0 20px}
+  .tags.on{display:block}
+  .tags-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .tags-head span{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .tags-head em{font-style:normal;font-size:12px;color:var(--muted)}
+  .tag-row{display:flex;flex-wrap:wrap;gap:7px}
+  .tag{
+    background:var(--bg-soft);border:1px solid var(--line);border-radius:999px;
+    padding:6px 12px;font:inherit;font-size:13px;color:var(--text);cursor:pointer;
+    transition:all .15s;
+  }
+  .tag:hover{border-color:var(--accent)}
+  .tag[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  /* At the 3-tag limit the rest stay clickable (so a tap can explain why) but
+     read as unavailable. */
+  .tag.maxed{opacity:.42}
+  .tag.maxed:hover{border-color:var(--line)}
+  .tags-reset{
+    background:none;border:0;padding:4px 2px;cursor:pointer;font:inherit;font-size:12.5px;
+    color:var(--muted);text-decoration:underline;text-underline-offset:2px;
+  }
+  .tags-reset:hover{color:var(--accent)}
+
   .rail-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
   .rail-head span{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
   .arrows{display:flex;gap:8px}
@@ -361,6 +385,15 @@
     </div>
     <h2 class="doc-title" id="docTitle"></h2>
 
+    <div class="tags" id="tags">
+      <div class="tags-head">
+        <span>Focus the summary</span>
+        <em id="tagsHint">Pick up to 3 tags</em>
+        <button class="tags-reset" id="tagsReset" type="button" hidden>Reset</button>
+      </div>
+      <div class="tag-row" id="tagRow"></div>
+    </div>
+
     <div class="rail-head">
       <span id="railLabel">Swipe through the TLDR</span>
       <div class="arrows">
@@ -470,6 +503,7 @@ const els = {
   railLabel:$('railLabel'), swipeHint:$('swipeHint'),
   recents:$('recents'), recentsLabel:$('recentsLabel'), chips:$('chips'),
   clearRecents:$('clearRecents'), share:$('share'), toast:$('toast'),
+  tags:$('tags'), tagRow:$('tagRow'), tagsHint:$('tagsHint'), tagsReset:$('tagsReset'),
 };
 
 let engine = null;          // 'webllm' | 'wasm'
@@ -599,38 +633,58 @@ function clean(t){
 }
 
 /* ---------------- 3. summarize locally ---------------- */
-async function summarize(doc){
-  return engine === 'webllm' ? summarizeWebLLM(doc) : summarizeWasm(doc);
+// focus: up to 3 selected tags, or empty for the general summary.
+async function summarize(doc, focus = []){
+  return engine === 'webllm' ? summarizeWebLLM(doc, focus) : summarizeWasm(doc, focus);
 }
 
 const SYSTEM = `You summarize web articles for busy readers. Reply with JSON only.`;
 
 // Grammar-constrained decoding: a 0.5B model won't reliably hand-write valid
 // JSON, so we make invalid JSON undecodable rather than trying to repair it.
+const CARD_PROPS = {
+  tldr:{ type:'string' },
+  cards:{
+    type:'array', minItems:3, maxItems:5,
+    items:{ type:'object',
+      properties:{ heading:{type:'string'}, body:{type:'string'} },
+      required:['heading','body'], additionalProperties:false }
+  },
+  takeaways:{ type:'array', minItems:3, maxItems:4, items:{ type:'string' } }
+};
+
+// First pass also asks for the tags. Re-runs (focused on a tag) reuse the
+// original tags, so the chips don't shuffle under the user's finger.
 const SCHEMA = {
   type:'object',
-  properties:{
-    tldr:{ type:'string' },
-    cards:{
-      type:'array', minItems:3, maxItems:5,
-      items:{ type:'object',
-        properties:{ heading:{type:'string'}, body:{type:'string'} },
-        required:['heading','body'], additionalProperties:false }
-    },
-    takeaways:{ type:'array', minItems:3, maxItems:4, items:{ type:'string' } }
-  },
+  properties:{ ...CARD_PROPS, tags:{ type:'array', minItems:10, maxItems:10, items:{ type:'string' } } },
+  required:['tldr','cards','takeaways','tags'], additionalProperties:false
+};
+
+const SCHEMA_FOCUS = {
+  type:'object',
+  properties:{ ...CARD_PROPS },
   required:['tldr','cards','takeaways'], additionalProperties:false
 };
 
-function userPrompt(doc){
+function userPrompt(doc, focus){
   const body = doc.text.slice(0, 5000);
-  return `Summarize the article below for someone who has not read it.
+  const lens = focus?.length
+    ? `\nRead the whole article, but summarize it THROUGH THE LENS OF: ${focus.join(', ')}.
+Every card must be about ${focus.length > 1 ? 'these topics' : 'this topic'} as the article
+discusses ${focus.length > 1 ? 'them' : 'it'}. Skip material that is not related. If the article
+says little about ${focus.length > 1 ? 'them' : 'it'}, say so plainly rather than padding.\n`
+    : '';
 
+  return `Summarize the article below for someone who has not read it.
+${lens}
 - tldr: one sentence, at most 30 words, the single most important point.
 - cards: 3 to 5 distinct main points, each covering different ground. heading is a
   2-5 word title naming that point (never a number, never "Point 1"). body is 2-3
   plain sentences.
-- takeaways: 3 short notable details, one line each, not restatements of the tldr.
+- takeaways: 3 short notable details, one line each, not restatements of the tldr.${focus?.length ? '' : `
+- tags: exactly 10 short topic tags (1-2 words each) naming the themes, people,
+  places, or technologies the article actually covers. No hashtags, no duplicates.`}
 
 Use plain language. Use only facts stated in the article. Do not repeat the tldr in the cards.
 
@@ -640,11 +694,11 @@ ARTICLE:
 ${body}`;
 }
 
-async function summarizeWebLLM(doc){
+async function summarizeWebLLM(doc, focus = []){
   const reply = await llm.chat.completions.create({
-    messages: [{role:'system', content:SYSTEM}, {role:'user', content:userPrompt(doc)}],
-    temperature: 0.3, max_tokens: 1000,
-    response_format: { type:'json_object', schema: JSON.stringify(SCHEMA) },
+    messages: [{role:'system', content:SYSTEM}, {role:'user', content:userPrompt(doc, focus)}],
+    temperature: 0.3, max_tokens: 1200,
+    response_format: { type:'json_object', schema: JSON.stringify(focus.length ? SCHEMA_FOCUS : SCHEMA) },
   });
   const raw = reply.choices[0].message.content || '';
   const parsed = parseJSON(raw);
@@ -652,9 +706,22 @@ async function summarizeWebLLM(doc){
   throw new Error('The model returned an unreadable summary. Try again.');
 }
 
-async function summarizeWasm(doc){
-  // DistilBART is extractive-ish and short-context: map over chunks, one card each.
-  const chunks = chunkText(doc.text, 3000).slice(0, 5);
+async function summarizeWasm(doc, focus = []){
+  // DistilBART only summarizes — it takes no instructions. So "focus on a tag"
+  // can't be a prompt here; instead we feed it only the parts of the article
+  // that actually discuss the tag, and let it summarize those.
+  let chunks = chunkText(doc.text, 3000);
+  if (focus.length){
+    const hits = chunks
+      .map(c => ({ c, n: focus.reduce((n, t) => n + countMentions(c, t), 0) }))
+      .filter(x => x.n > 0)
+      .sort((a, b) => b.n - a.n)
+      .map(x => x.c);
+    if (!hits.length) throw new Error(`The article says little about ${focus.join(' + ')}. Try another tag.`);
+    chunks = hits;
+  }
+  chunks = chunks.slice(0, 5);
+
   const cards = [];
   for (let i = 0; i < chunks.length; i++){
     progress((i + 0.5) / chunks.length);
@@ -664,10 +731,44 @@ async function summarizeWasm(doc){
   }
   progress(null);
   if (!cards.length) throw new Error('The model could not summarize that page.');
+
   const tldr = cards.length > 1
     ? (await llm(cards.map(c=>c.body).join(' ').slice(0,3000), { max_new_tokens:60, min_new_tokens:20, do_sample:false }))[0].summary_text.trim()
     : firstSentences(cards[0].body, 1);
-  return normalize({ tldr, cards, takeaways: cards.map(c => firstSentences(c.body, 1)) });
+
+  return normalize({
+    tldr, cards,
+    takeaways: cards.map(c => firstSentences(c.body, 1)),
+    tags: focus.length ? [] : keywordTags(doc.text),
+  });
+}
+
+const countMentions = (text, term) => {
+  const m = text.toLowerCase().split(term.toLowerCase()).length - 1;
+  return m;
+};
+
+// The WASM engine can't be asked for tags, so derive them from the text: the
+// most frequent meaningful terms, preferring proper nouns.
+const STOP = new Set(('the a an and or but of to in on at for with from by as is are was were be been being this that these those it its ' +
+  'have has had not can could would should will may might also more most other such than then there their they them he she his her you your ' +
+  'we our us i which who whom what when where how why all any each some many much very into over under about after before between during ' +
+  'because while both few own same so too s t don now new one two first second used using use like just only').split(' '));
+
+function keywordTags(text){
+  const words = text.replace(/[^A-Za-z0-9'\- ]/g, ' ').split(/\s+/).filter(Boolean);
+  const freq = new Map();
+  for (const w of words){
+    const k = w.toLowerCase();
+    if (k.length < 4 || STOP.has(k) || /^\d+$/.test(k)) continue;
+    // Proper nouns are usually what a reader wants to filter by, so weight them.
+    const weight = /^[A-Z]/.test(w) ? 2 : 1;
+    freq.set(k, (freq.get(k) || 0) + weight);
+  }
+  return [...freq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([w]) => w[0].toUpperCase() + w.slice(1));
 }
 
 /* ---------------- parsing / shaping ---------------- */
@@ -707,10 +808,18 @@ function normalize(o){
     .filter(t => t.length > 8 && !isEcho(t, tldr))
     .slice(0, 5);
 
+  const tagSeen = new Set();
+  const tags = (Array.isArray(o.tags) ? o.tags : [])
+    .map(t => String(t).replace(/^#/, '').trim())
+    .filter(t => t.length > 1 && t.length < 30)
+    .filter(t => { const k = t.toLowerCase(); if (tagSeen.has(k)) return false; tagSeen.add(k); return true; })
+    .slice(0, 10);
+
   return {
     tldr: tldr || (cards[0]?.body ? firstSentences(cards[0].body, 1) : 'Summary unavailable.'),
     cards: cards.length ? cards : [{ heading:'Summary', body: tldr || 'No summary available.' }],
     takeaways,
+    tags,
   };
 }
 
@@ -757,7 +866,9 @@ function renderCards(nodes){
   syncNav();
 }
 
-function skeleton(){
+// keepMeta: a tag re-run is still the same article, so leave the title and
+// source line alone — only the cards are being rebuilt.
+function skeleton(keepMeta){
   const mk = () => {
     const c = document.createElement('div'); c.className = 'card';
     c.innerHTML = `<div class="skel" style="height:20px;width:35%"></div>
@@ -766,8 +877,10 @@ function skeleton(){
                    <div class="skel" style="height:14px;width:85%"></div>`;
     return c;
   };
-  els.docTitle.textContent = 'Reading and summarizing…';
-  els.host.textContent = ''; els.readtime.textContent = '';
+  if (!keepMeta){
+    els.docTitle.textContent = 'Reading and summarizing…';
+    els.host.textContent = ''; els.readtime.textContent = '';
+  }
   els.railLabel.textContent = 'Working locally';
   els.swipeHint.textContent = 'The model is running on your device — this can take a moment.';
   renderCards([mk(), mk()]);
@@ -990,7 +1103,104 @@ els.clearRecents.addEventListener('click', () => {
   toast('Recent links cleared');
 });
 
-/* ---------------- 8. share ---------------- */
+/* ---------------- 8. tags ---------------- */
+const MAX_TAGS = 3;
+
+// Everything needed to re-summarize without starting over: the unfocused
+// summary (so clearing tags is instant), the tag list, and the article text.
+// `article` is null for a summary that arrived via a share link — we never
+// fetched its text — so tagging one has to fetch it first.
+let current = { base:null, meta:null, tags:[], article:null, focus:[] };
+
+function renderTags(){
+  const list = current.tags || [];
+  els.tags.classList.toggle('on', list.length > 0);
+  if (!list.length) return;
+
+  const maxed = current.focus.length >= MAX_TAGS;
+  els.tagsReset.hidden = current.focus.length === 0;
+  els.tagsHint.textContent = current.focus.length
+    ? `Focused on ${current.focus.join(' + ')}`
+    : `Pick up to ${MAX_TAGS} tags`;
+
+  els.tagRow.replaceChildren(...list.map((t) => {
+    const on = current.focus.includes(t);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tag' + (!on && maxed ? ' maxed' : '');
+    b.textContent = t;
+    b.setAttribute('aria-pressed', String(on));
+    b.addEventListener('click', () => toggleTag(t));
+    return b;
+  }));
+}
+
+function toggleTag(tag){
+  if (busy) return;
+  const on = current.focus.includes(tag);
+  if (!on && current.focus.length >= MAX_TAGS){
+    toast(`Up to ${MAX_TAGS} tags — deselect one first`);
+    return;
+  }
+  current.focus = on ? current.focus.filter(t => t !== tag) : [...current.focus, tag];
+  renderTags();
+  regenerate();
+}
+
+els.tagsReset.addEventListener('click', () => {
+  if (busy || !current.focus.length) return;
+  current.focus = [];
+  renderTags();
+  regenerate();
+});
+
+async function regenerate(){
+  // No tags selected: the unfocused summary is already in hand, so this is free.
+  if (!current.focus.length){
+    build(current.base, current.meta);
+    renderTags();
+    hint('Showing the full summary.');
+    return;
+  }
+  if (!modelReady){
+    toast('The model is still loading');
+    return;
+  }
+
+  busy = true;
+  els.go.disabled = true;
+  skeleton(true);
+  els.tags.classList.add('on');
+
+  try {
+    // A shared summary never carried the article text, so fetch it now.
+    if (!current.article){
+      hint('Fetching the article to refocus…');
+      current.article = await loadPage(current.meta.url);
+    }
+    hint(`Refocusing on ${current.focus.join(' + ')}…`);
+    if (engine === 'webllm') progress(0.35);
+
+    const summary = await summarize(current.article, current.focus);
+    progress(null);
+    build({ ...summary, tags: current.tags }, current.meta);
+    renderTags();
+    hint(`Summary focused on ${current.focus.join(' + ')}.`);
+  } catch (err){
+    console.error(err);
+    progress(null);
+    // Keep the previous cards on screen rather than blanking the page.
+    build(current.base, current.meta);
+    current.focus = [];
+    renderTags();
+    hint(err.message || 'Could not refocus that summary.', true);
+  } finally {
+    busy = false;
+    els.go.disabled = false;
+  }
+}
+
+/* ---------------- 9. share ---------------- */
 let shared = null;   // { summary, meta } of whatever is on screen
 
 function toast(msg){
@@ -1031,6 +1241,8 @@ async function shareLink(){
       s: shared.summary.tldr,
       c: shared.summary.cards.map(c => [c.heading, c.body]),
       k: shared.summary.takeaways,
+      g: current.tags || [],          // tags travel too, so a recipient can refocus
+      f: current.focus || [],
     });
     const packed = b64url.enc(await deflate(payload));
     return packed.length > MAX_FRAGMENT ? base : `${base}#s=${packed}`;
@@ -1047,8 +1259,14 @@ async function readSharedSummary(){
     const o = JSON.parse(await inflate(b64url.dec(frag)));
     return {
       url,
-      summary: normalize({ tldr: o.s, cards: (o.c || []).map(([heading, body]) => ({ heading, body })), takeaways: o.k || [] }),
+      summary: normalize({
+        tldr: o.s,
+        cards: (o.c || []).map(([heading, body]) => ({ heading, body })),
+        takeaways: o.k || [],
+        tags: o.g || [],
+      }),
       meta: { title: o.t, url, read: o.r },
+      focus: Array.isArray(o.f) ? o.f.slice(0, MAX_TAGS) : [],
     };
   } catch { return { url, summary: null }; }
 }
@@ -1139,9 +1357,13 @@ els.form.addEventListener('submit', async (e) => {
     if (engine === 'webllm') progress(0.35);
     const summary = await summarize(doc);
     progress(null);
-    build(summary, { title: doc.title, url: target, read: readTime(doc.text) });
+
+    const meta = { title: doc.title, url: target, read: readTime(doc.text) };
+    current = { base: summary, meta, tags: summary.tags || [], article: doc, focus: [] };
+    build(summary, meta);
+    renderTags();
     rememberUrl(target, doc.title);
-    hint('Done. Paste another link any time.');
+    hint('Done. Pick a tag to refocus, or paste another link.');
   } catch(err){
     console.error(err);
     progress(null);
@@ -1164,7 +1386,14 @@ renderRecents();
   // needs neither the model nor the network to read it.
   if (incoming?.summary){
     els.url.value = incoming.url;
+    // article stays null: we never fetched the text, so refocusing has to fetch.
+    current = {
+      base: incoming.summary, meta: incoming.meta,
+      tags: incoming.summary.tags || [], article: null,
+      focus: incoming.focus || [],
+    };
     build(incoming.summary, incoming.meta);
+    renderTags();
   }
 
   await boot();

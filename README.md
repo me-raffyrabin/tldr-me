@@ -102,6 +102,22 @@ The header has a light/dark toggle. It defaults to your OS preference, and once 
 
 ---
 
+## Tags: refocusing a summary
+
+Each summary comes with **10 topic tags** the model pulled from the article, shown as buttons under the title. Select up to **3** and the cards are **regenerated** — re-summarized through the lens of those tags, not just filtered. Picking `plants` on the photosynthesis article gets you different cards, not the same cards with unrelated ones hidden.
+
+Three implementation notes, since none of this is free:
+
+- **Regenerating needs the article text, not the summary.** The app keeps the fetched text in memory for the current page. Tagging a summary that arrived via a *share link* has no text to work from, so it re-fetches the article first (you'll see "Fetching the article to refocus…").
+- **Reset is instant.** The unfocused summary is cached, so clearing the tags re-renders it without running the model again.
+- **The WASM engine can't be prompted.** DistilBART only summarizes; it takes no instructions. So on that path tags come from keyword extraction (weighted toward proper nouns), and "focus" means feeding the model only the chunks of the article that actually mention the tag. Different mechanism, same idea.
+
+Tags travel inside share links too, so a recipient can refocus a summary you sent them.
+
+Tag quality tracks model quality: the 0.5B model occasionally invents a tag that isn't really in the article. The 1.5B swap noted above helps here.
+
+---
+
 ## Recent links
 
 The last **25** summarized URLs are kept in `localStorage` (`tldrme:recents`) and shown as chips under the input. Tap one to summarize it again. Re-running a link already in the list moves it to the top instead of adding a duplicate, and **Clear all** wipes the list (behind a confirm, since it can't be undone).
