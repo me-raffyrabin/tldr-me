@@ -1,5 +1,7 @@
 # TLDR Me
 
+**[▶ Live preview](https://me-raffyrabin.github.io/tldr-me/)** — heads up: the first visit downloads the model (~350 MB), so give it a moment. Every visit after that is instant.
+
 Paste a link, get a swipeable summary. The summarizing model runs **entirely in your browser** — the page you're reading is never sent to a summarization server.
 
 No build step, no bundler, no backend, no API key.
@@ -45,7 +47,13 @@ npx serve          # then open the printed http://localhost:… URL
 python3 -m http.server 8000
 ```
 
-Deploying is just as simple: it's a static file, so any static host works (GitHub Pages, Netlify, Vercel, S3, Cloudflare Pages).
+### Deploying
+
+It's static, so any static host works (GitHub Pages, Netlify, Vercel, S3, Cloudflare Pages).
+
+The live preview above is GitHub Pages, served from the repo root: **Settings → Pages → Source: `Deploy from a branch` → `main` / `/ (root)`**. Push, wait a minute, done.
+
+Pages also serves over HTTPS, which isn't just a nicety here — the service worker only registers over HTTPS (or `localhost`), and without it Android will never offer the install prompt.
 
 ---
 
