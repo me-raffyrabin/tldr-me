@@ -1,5 +1,9 @@
 # TLDR Me
 
+**TLDR Me** is a lightweight, privacy-minded web app that uses a small AI model that moves in once, unpacks on your device, and reads the long stuff so you don't have to. It never phones home — it doesn't even have a phone.
+
+---
+
 **[▶ Live preview](https://me-raffyrabin.github.io/tldr-me/)** — heads up: the first visit downloads the model (~350 MB), so give it a moment. Every visit after that is instant.
 
 Paste a link, get a swipeable summary. The summarizing model runs **entirely in your browser** — the page you're reading is never sent to a summarization server.
@@ -36,16 +40,6 @@ Engine B is a dedicated summarization model with a short context window, so the 
 The status chip in the header tells you which engine you got (`Model ready · GPU` / `· CPU`).
 
 ---
-
-## Running it
-
-The app must be served over HTTP. Opening `index.html` as a `file://` URL will **not** work — the model libraries load as ES modules and web workers, which the file protocol blocks.
-
-```bash
-npx serve          # then open the printed http://localhost:… URL
-# or
-python3 -m http.server 8000
-```
 
 ### Deploying
 
@@ -108,26 +102,34 @@ The header has a light/dark toggle. It defaults to your OS preference, and once 
 
 ---
 
-## Add to Home Screen
+## Recent links
 
-An **Add to Home Screen** button appears **only on Android and iOS phones/tablets**, and hides itself once the app is already installed. Desktop never sees it.
+The last **25** summarized URLs are kept in `localStorage` (`tldrme:recents`) and shown as chips under the input. Tap one to summarize it again. Re-running a link already in the list moves it to the top instead of adding a duplicate, and **Clear all** wipes the list (behind a confirm, since it can't be undone).
 
-The two platforms need completely different handling:
+Nothing is synced anywhere — clear your browser data and the list is gone with it.
 
-- **Android (Chrome)** — the button appears only after Chrome fires `beforeinstallprompt`, i.e. only once it has confirmed the app really is installable. Tapping it opens Chrome's native install dialog. If Chrome never fires the event, the button never appears, so it can't become a dead end.
-- **iOS (Safari)** — there is no install API, and Apple provides no way for a site to install itself. The button opens a sheet explaining the two manual taps (Share → Add to Home Screen). This is the only thing any website can do on iOS.
+---
 
-Installability on Android requires all three of a manifest, icons, and a service worker with a fetch handler — which is what `manifest.webmanifest` and `sw.js` are for. **Installing also requires HTTPS** (or `localhost`); over plain `http://` on a LAN address, the service worker won't register and the Android button will never appear.
+## Sharing
 
-The service worker deliberately does **not** cache the model weights. WebLLM and Transformers.js maintain their own caches, and copying hundreds of megabytes into a second cache would waste storage and fight their eviction logic.
+Every summary gets a share row: **Copy link, Facebook, X, Instagram, SMS, Email**.
 
-### Regenerating the icons
+The interesting part is what "Copy link" actually copies. The summary exists *only* on the device that generated it — there is no server to fetch it back from. So the link carries the summary **inside itself**:
 
-The icons are generated from the app's own gradient mark. They're committed, so you only need this if you change the branding — it renders them with headless Chrome:
-
-```bash
-node scripts/make-icons.mjs    # see the script for the Chrome debug-port setup
 ```
+https://…/?u=<source url>#s=<summary, deflate-compressed then base64url>
+```
+
+Opening that link renders the cards **instantly** — no model download, no summarization, not even a re-fetch of the original article. (Verified by opening a share link with every model CDN *and* every reader proxy blocked: all cards still render.)
+
+Two details worth knowing:
+
+- The summary rides in the URL **fragment** (`#s=`), which browsers never send to the server. Even on a hosted deploy, the summary is not transmitted to the host.
+- If the compressed summary would push the link past ~1800 characters, it degrades to just `?u=<source url>`, and the recipient's device re-summarizes locally. A slower link beats a broken one.
+
+**Instagram is the odd one out.** It has no web link-sharing endpoint — there is no URL you can open to hand it a link. On mobile the button opens the OS share sheet (where Instagram is a genuine target); on desktop it copies the link and says to paste it. Any site claiming to "share to Instagram" from a web page is doing one of those two things.
+
+SMS also needs per-platform handling: iOS wants `sms:&body=`, Android wants `sms:?body=`. Using the wrong one opens an empty message.
 
 ---
 
@@ -136,4 +138,16 @@ node scripts/make-icons.mjs    # see the script for the Chrome debug-port setup
 - Article text and summaries are processed in your browser and are not sent anywhere.
 - Model weights are downloaded from a public CDN (Hugging Face / jsDelivr) and cached locally.
 - Pasted URLs *are* sent to the reader proxy described above.
+- Recent links stay in `localStorage` on your device.
+- Shared links carry the summary in the fragment, which is never sent to the server — but anyone holding the link can read the summary, so treat a share link as public.
 - No analytics, no cookies, no accounts.
+
+---
+
+## 📄 License
+
+Released under the [MIT License — use it, fork it, forge with it.](LICENSE). © 2026 realgothamknights.
+
+---
+
+<p align="center">Made with ✨ and a love for forging things.</p>
