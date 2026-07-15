@@ -12,6 +12,7 @@ No build step, no bundler, no backend, no API key.
 
 ```
 index.html              main app — UI, engines, fetching, summarization
+reader-fetch.js         bounded reader requests and body-download timeouts
 trust-engine.js         deterministic Trust & Source signal scoring
 manifest.webmanifest    PWA metadata, so Android can install it
 sw.js                   service worker: makes it installable + caches the shell
@@ -74,6 +75,7 @@ On low-memory phones the WASM path is the realistic one, and summarizing takes n
 - The URL you paste is visible to that third-party proxy.
 - **Don't paste links to private, internal, or logged-in pages.**
 - Those proxies are rate-limited and can go down. For anything production-facing, replace the `READERS` list in `index.html` with your own fetch endpoint.
+- Reader attempts are bounded by per-reader timeouts and a 24-second overall deadline. If the primary reader fails, the UI identifies each backup attempt instead of appearing frozen.
 
 The *summarization* is genuinely local. The *fetching* is not, and can't be, in a pure browser app.
 

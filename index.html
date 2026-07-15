@@ -568,6 +568,7 @@
 </div>
 
 <script type="module">
+import { ReaderTimeoutError, fetchTextWithTimeout } from './reader-fetch.js';
 import {
   TRUST_CACHE_TTL,
   TRUST_METHOD_VERSION,
@@ -675,28 +676,51 @@ async function bootWasm(){
 
 /* ---------------- 2. fetch + extract page text ---------------- */
 const READERS = [
-  { name:'jina',      url:(u)=>`https://r.jina.ai/${u}`,                                   kind:'text' },
-  { name:'allorigins',url:(u)=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, kind:'html' },
-  { name:'corsproxy', url:(u)=>`https://corsproxy.io/?${encodeURIComponent(u)}`,           kind:'html' },
+  { name:'jina', timeout:10000, url:(u)=>`https://r.jina.ai/${u}`, kind:'text' },
+  // Some public sites allow cross-origin reads; this is a fast, proxy-free
+  // fallback when Jina is unavailable. Most sites reject it immediately.
+  { name:'direct', timeout:4000, url:(u)=>u, kind:'html' },
+  // An HTTP source URL can take a different upstream path through Jina while
+  // the browser still talks to Jina securely over HTTPS.
+  { name:'jina-http', timeout:7000, canUse:(u)=>new URL(u).protocol === 'https:',
+    url:(u)=>{ const source = new URL(u); source.protocol = 'http:'; return `https://r.jina.ai/${source.href}`; }, kind:'text' },
+  // Kept last because its availability varies; the global deadline prevents
+  // it from extending the wait beyond the UX budget.
+  { name:'allorigins', timeout:6000, url:(u)=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, kind:'html' },
 ];
 
-async function loadPage(target){
+const PAGE_LOAD_DEADLINE = 24000;
+
+function readerAttemptHint({ attempt, total }, firstMessage = 'Fetching the page…'){
+  hint(attempt === 1 ? firstMessage : `Trying backup reader ${attempt - 1} of ${total - 1}…`);
+}
+
+async function loadPage(target, onAttempt){
   let lastErr;
-  for (const r of READERS){
+  const readers = READERS.filter((reader) => !reader.canUse || reader.canUse(target));
+  const started = Date.now();
+  for (let index = 0; index < readers.length; index++){
+    const r = readers[index];
+    const remaining = PAGE_LOAD_DEADLINE - (Date.now() - started);
+    if (remaining <= 0) break;
+    onAttempt?.({ attempt:index + 1, total:readers.length, reader:r.name });
     try{
-      const ctrl = new AbortController();
-      const t = setTimeout(()=>ctrl.abort(), 25000);
-      const res = await fetch(r.url(target), { signal: ctrl.signal, headers:{ 'Accept':'text/plain,text/html' }});
-      clearTimeout(t);
+      const { response:res, body } = await fetchTextWithTimeout(r.url(target), {
+        timeoutMs:Math.min(r.timeout, remaining),
+        headers:{ Accept:'text/plain,text/html' },
+      });
       if (!res.ok) throw new Error(`${r.name} ${res.status}`);
-      const body = await res.text();
       if (!body || body.length < 200) throw new Error(`${r.name} returned too little`);
       const doc = r.kind === 'text' ? fromReaderText(body, target) : fromHTML(body, target);
       if (doc.text.length < 280) throw new Error(`${r.name}: not enough readable text`);
       return doc;
-    } catch(e){ lastErr = e; }
+    } catch(e){
+      lastErr = e instanceof ReaderTimeoutError
+        ? new Error(`${r.name} timed out after ${Math.ceil(e.timeoutMs / 1000)}s`)
+        : e;
+    }
   }
-  throw new Error('Could not read that page. It may be paywalled, private, or blocking readers. ' + (lastErr?.message || ''));
+  throw new Error('Could not read that page within 24 seconds. It may be paywalled, private, or blocking readers. ' + (lastErr?.message || ''));
 }
 
 // r.jina.ai returns "Title: …\nURL Source: …\n[Published Time: …]\nMarkdown Content:\n…"
@@ -1745,9 +1769,6 @@ async function regenerate(){
   }
 
   busy = true;
-  cancelTrustChecks();
-  const assessmentSeq = ++trustSeq;
-  const cachedTrust = readTrustCache(target);
   els.go.disabled = true;
   skeleton(true);
   els.tags.classList.add('on');
@@ -1756,7 +1777,8 @@ async function regenerate(){
     // A shared summary never carried the article text, so fetch it now.
     if (!current.article){
       hint('Fetching the article to refocus…');
-      current.article = await loadPage(current.meta.url);
+      current.article = await loadPage(current.meta.url, (state) =>
+        readerAttemptHint(state, 'Fetching the article to refocus…'));
     }
     hint(`Refocusing on ${current.focus.join(' + ')}…`);
     if (engine === 'webllm') progress(0.35);
@@ -1979,13 +2001,16 @@ els.form.addEventListener('submit', async (e) => {
   try { new URL(target); } catch { hint('That doesn\'t look like a valid URL.', true); return; }
 
   busy = true;
+  cancelTrustChecks();
+  const assessmentSeq = ++trustSeq;
+  const cachedTrust = readTrustCache(target);
   els.go.disabled = true;
   els.go.textContent = '…';
   hint('Fetching the page…');
   skeleton();
 
   try{
-    const doc = await loadPage(target);
+    const doc = await loadPage(target, readerAttemptHint);
     // Local heuristics are available immediately; optional publisher checks run
     // alongside summarization and never block the cards.
     extractTrustSignals(doc, target);
