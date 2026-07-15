@@ -142,7 +142,10 @@
   .src{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px}
   .src .host{font-size:12px;color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line)}
   .doc-title{font-size:20px;font-weight:650;letter-spacing:-.02em;margin:0 0 18px;line-height:1.3}
+  .doc-author{margin:-14px 0 2px;font-size:12.5px;font-weight:600;color:var(--text)}
+  .doc-author.solo{margin-bottom:18px}
   .doc-date{margin:-14px 0 18px;font-size:12.5px;color:var(--muted)}
+  .doc-author:not([hidden]) + .doc-date{margin-top:0}
 
   /* ---------- trust & source ---------- */
   .trust-source{
@@ -480,6 +483,7 @@
       <span class="host" id="readtime"></span>
     </div>
     <h2 class="doc-title" id="docTitle"></h2>
+    <p class="doc-author" id="docAuthor" hidden></p>
     <p class="doc-date" id="docDate" hidden></p>
 
     <section class="trust-source" id="trustSource" aria-labelledby="trustSourceTitle" hidden>
@@ -597,7 +601,7 @@ const els = {
   form:$('form'), url:$('url'), go:$('go'), clear:$('clear'), hint:$('hint'),
   bar:$('bar'), fill:$('barFill'), dot:$('dot'), statusText:$('statusText'),
   results:$('results'), rail:$('rail'), dots:$('dots'), host:$('host'),
-  docTitle:$('docTitle'), docDate:$('docDate'), readtime:$('readtime'), prev:$('prev'), next:$('next'),
+  docTitle:$('docTitle'), docAuthor:$('docAuthor'), docDate:$('docDate'), readtime:$('readtime'), prev:$('prev'), next:$('next'),
   railLabel:$('railLabel'), swipeHint:$('swipeHint'),
   trustSource:$('trustSource'), trustSourceBody:$('trustSourceBody'), trustVersion:$('trustVersion'),
   recents:$('recents'), recentsLabel:$('recentsLabel'), chips:$('chips'),
@@ -924,6 +928,11 @@ function formatPublished(s){
   return hasTime
     ? `${date} · ${d.toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' })}`
     : date;
+}
+
+function formatAuthor(value){
+  const author = String(value || '').replace(/\s+/g, ' ').replace(/^by\s+/i, '').trim().slice(0, 160);
+  return author ? `By ${author}` : '';
 }
 
 function clean(t){
@@ -1453,6 +1462,7 @@ function skeleton(keepMeta){
   if (!keepMeta){
     els.docTitle.textContent = 'Reading and summarizing…';
     els.host.textContent = ''; els.readtime.textContent = '';
+    els.docAuthor.textContent = ''; els.docAuthor.hidden = true; els.docAuthor.classList.remove('solo');
     els.docDate.textContent = ''; els.docDate.hidden = true;
     clearTrustSource();
     renderTrustSourceLoading();
@@ -1462,7 +1472,7 @@ function skeleton(keepMeta){
   renderCards([mk(), mk()]);
 }
 
-// meta: { title, url, read } — deliberately not the fetched document, so a
+// meta: { title, author, published, url, read } — deliberately not the fetched document, so a
 // shared link can rebuild the exact same view with no network and no model.
 function build(summary, meta){
   const cards = [];
@@ -1498,9 +1508,13 @@ function build(summary, meta){
   els.host.title = meta.url;
   els.readtime.textContent = meta.read ? '· original: ' + meta.read : '';
   els.docTitle.textContent = meta.title || host;
+  const author = formatAuthor(meta.author);
+  els.docAuthor.textContent = author;
+  els.docAuthor.hidden = !author;
   const published = formatPublished(meta.published);
   els.docDate.textContent = published ? 'Published ' + published : '';
   els.docDate.hidden = !published;
+  els.docAuthor.classList.toggle('solo', !!author && !published);
   if (meta.trust) renderTrustSource(meta.trust, meta.trustNote || '');
   else if (meta.trustUnavailable) renderTrustSourceUnavailable(meta.trustUnavailable);
   els.railLabel.textContent = `${cards.length} cards`;
@@ -1909,7 +1923,7 @@ async function shareLink(){
   if (!('CompressionStream' in window)) return base;
   try {
     const payload = JSON.stringify({
-      t: shared.meta.title, r: shared.meta.read, p: shared.meta.published || '',
+      t: shared.meta.title, a:shared.meta.author || '', r: shared.meta.read, p: shared.meta.published || '',
       s: shared.summary.tldr,
       c: shared.summary.cards.map(c => [c.heading, c.body]),
       k: shared.summary.takeaways,
@@ -1941,7 +1955,7 @@ async function readSharedSummary(){
         tags: o.g || [],
       }),
       meta: {
-        title:o.t, url, read:o.r, published:o.p || '', trust,
+        title:o.t, author:o.a || '', url, read:o.r, published:o.p || '', trust,
         trustNote:trust ? `Assessment included in shared summary${trustIsOld ? ' · may be outdated' : ''}` : '',
         trustUnavailable:trust ? '' : 'Assessment not included in this shared summary.',
       },
@@ -2020,7 +2034,7 @@ els.form.addEventListener('submit', async (e) => {
     const summary = await summarize(doc);
     progress(null);
 
-    const meta = { title: doc.title, url: target, read: readTime(doc.text), published: doc.published || '' };
+    const meta = { title:doc.title, author:doc.author || '', url:target, read:readTime(doc.text), published:doc.published || '' };
     current = { base: summary, meta, tags: summary.tags || [], article: doc, focus: [] };
     build(summary, meta);
     renderTags();

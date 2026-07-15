@@ -9,7 +9,7 @@
  * into this cache would be wasteful and would fight their eviction logic.
  */
 
-const CACHE = 'tldrme-shell-v4';
+const CACHE = 'tldrme-shell-v5';
 const SHELL = [
   './',
   './index.html',

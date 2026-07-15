@@ -26,3 +26,12 @@ test('reader pipeline has a bounded deadline and no rejected CorsProxy fallback'
   assert.match(readers, /Trying backup reader/);
   assert.doesNotMatch(readers, /corsproxy\.io/);
 });
+
+test('author metadata renders above the published date and survives sharing', () => {
+  const authorPosition = source.indexOf('id="docAuthor"');
+  const datePosition = source.indexOf('id="docDate"');
+  assert.ok(authorPosition > -1 && authorPosition < datePosition, 'author must appear before the date');
+  assert.match(source, /a:shared\.meta\.author \|\| ''/);
+  assert.match(source, /author:o\.a \|\| ''/);
+  assert.match(source, /author:doc\.author \|\| ''/);
+});
