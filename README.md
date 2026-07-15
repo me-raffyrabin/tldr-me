@@ -158,7 +158,7 @@ Nothing is synced anywhere — clear your browser data and the list is gone with
 
 ## Sharing
 
-Every summary gets a share row: **Copy link, Facebook, X, Instagram, SMS, Email**.
+Every summary gets a share row: **Copy link, SMS, Email**.
 
 The interesting part is what "Copy link" actually copies. The summary exists *only* on the device that generated it — there is no server to fetch it back from. So the link carries the summary **inside itself**:
 
@@ -172,8 +172,6 @@ Two details worth knowing:
 
 - The summary rides in the URL **fragment** (`#s=`), which browsers never send to the server. Even on a hosted deploy, the summary is not transmitted to the host.
 - If the compressed summary would push the link past ~1800 characters, it degrades to just `?u=<source url>`, and the recipient's device re-summarizes locally. A slower link beats a broken one.
-
-**Instagram is the odd one out.** It has no web link-sharing endpoint — there is no URL you can open to hand it a link. On mobile the button opens the OS share sheet (where Instagram is a genuine target); on desktop it copies the link and says to paste it. Any site claiming to "share to Instagram" from a web page is doing one of those two things.
 
 SMS also needs per-platform handling: iOS wants `sms:&body=`, Android wants `sms:?body=`. Using the wrong one opens an empty message.
 
