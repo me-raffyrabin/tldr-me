@@ -35,3 +35,15 @@ test('author metadata renders above the published date and survives sharing', ()
   assert.match(source, /author:o\.a \|\| ''/);
   assert.match(source, /author:doc\.author \|\| ''/);
 });
+
+test('screenshot export is mobile-only and includes the requested sections', () => {
+  assert.match(source, /id="shScreenshot"[^>]+hidden/);
+  assert.match(source, /els\.shScreenshot\.hidden = !isMobile/);
+  const handler = between("els.shScreenshot.addEventListener('click'", '/* ---------------- 9. wire it up');
+  assert.match(handler, /if \(!isMobile \|\| !shared/);
+  assert.match(handler, /createSummaryScreenshot\(\)/);
+  assert.match(source, /TLDR Me -/);
+  assert.match(source, /Summaries that run on your device/);
+  assert.match(source, /WHY THIS SCORE\?/);
+  assert.match(source, /screenshotCardSpecs\(shared\.summary\)/);
+});

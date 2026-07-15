@@ -28,6 +28,7 @@ scripts/                 icon tooling + Trust & Source unit tests
 2. **You paste a URL.** The app fetches that page's text and strips it down to readable content.
 3. **The local model summarizes it** and returns a one-line TLDR, 3–5 main points, and a few takeaways.
 4. **The result renders as swipeable cards** — swipe on touch, arrow keys or on-screen arrows on desktop.
+5. **On a phone, Screenshot creates a private PNG** containing the article metadata, expanded Trust & Source assessment, Summary, and every TLDR card. Android saves the PNG to the device; iOS opens the system share sheet because Safari requires the user to choose **Save Image** before a website can add anything to Photos.
 
 ### Two engines, picked automatically
 

@@ -335,10 +335,13 @@
   .sbtn.copy{
     background:var(--accent-soft);border-color:transparent;color:var(--accent);
   }
+  .sbtn.screenshot-only{display:none}
+  .sbtn:disabled{opacity:.48;cursor:wait;transform:none}
   @media (max-width:520px){
     .share{gap:10px}
-    .share-row{margin-left:0;width:100%}
-    .sbtn{flex:1 1 0;padding:0 8px}
+    .share-row{margin-left:0;width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .sbtn{width:100%;height:42px;padding:0 8px}
+    .sbtn.screenshot-only:not([hidden]){display:inline-flex}
   }
 
   .toast{
@@ -539,6 +542,13 @@
           </svg>
           <span>Email</span>
         </button>
+
+        <button class="sbtn screenshot-only" id="shScreenshot" type="button" title="Save the TLDR as an image" aria-label="Save the TLDR as an image" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="5.5" width="18" height="14.5" rx="3"/><path d="m7.5 15 2.8-3 2.5 2.4 1.7-1.8 2.8 3.1"/><circle cx="16.5" cy="9.5" r="1.25"/>
+          </svg>
+          <span>Screenshot</span>
+        </button>
       </div>
     </div>
   </section>
@@ -607,6 +617,7 @@ const els = {
   recents:$('recents'), recentsLabel:$('recentsLabel'), chips:$('chips'),
   recentsToggle:$('recentsToggle'), recentsCount:$('recentsCount'),
   clearRecents:$('clearRecents'), share:$('share'), toast:$('toast'),
+  shScreenshot:$('shScreenshot'),
   tags:$('tags'), tagRow:$('tagRow'), tagsHint:$('tagsHint'), tagsReset:$('tagsReset'),
 };
 
@@ -1603,6 +1614,10 @@ const isMobile = (isIOS || isAndroid) && navigator.maxTouchPoints > 0;
 const isInstalled = window.matchMedia('(display-mode: standalone)').matches
                  || navigator.standalone === true;
 
+// This export is intentionally a phone-only action. Keep the control hidden in
+// markup as well as CSS so desktop users cannot reach it by keyboard or script.
+els.shScreenshot.hidden = !isMobile;
+
 let deferredPrompt = null;
 
 // Android/Chrome: only offer the button once the browser confirms the app is
@@ -2001,6 +2016,281 @@ $('shEmail').addEventListener('click', () => {
   const body = encodeURIComponent(
     `${shared?.summary.tldr || ''}\n\nRead the TLDR: ${link()}\n\nOriginal: ${shared?.meta.url || ''}`);
   location.href = `mailto:?subject=${encodeURIComponent(shareText())}&body=${body}`;
+});
+
+const SCREENSHOT_WIDTH = 1080;
+const SCREENSHOT_PAD = 72;
+const SCREENSHOT_GAP = 24;
+const SCREENSHOT_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif';
+const SCREENSHOT_COLORS = {
+  bg:'#f5f4f0', surface:'#ffffff', soft:'#eeecff', text:'#17171c', muted:'#686875',
+  line:'#dedde3', accent:'#5148df', positive:'#16845b', warning:'#a66a12', danger:'#c02b2b',
+};
+
+function screenshotFont(ctx, weight, size){
+  ctx.font = `${weight} ${size}px ${SCREENSHOT_FONT}`;
+}
+
+function screenshotLines(ctx, value, maxWidth){
+  const paragraphs = String(value || '').split(/\n+/);
+  const lines = [];
+  paragraphs.forEach((paragraph, paragraphIndex) => {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean);
+    let line = '';
+    words.forEach((word) => {
+      const candidate = line ? `${line} ${word}` : word;
+      if (!line || ctx.measureText(candidate).width <= maxWidth) line = candidate;
+      else { lines.push(line); line = word; }
+    });
+    if (line) lines.push(line);
+    if (paragraphIndex < paragraphs.length - 1 && lines.length) lines.push('');
+  });
+  return lines.length ? lines : [''];
+}
+
+function screenshotText(ctx, lines, x, y, lineHeight){
+  lines.forEach((line, index) => ctx.fillText(line, x, y + index * lineHeight));
+  return y + lines.length * lineHeight;
+}
+
+function screenshotRoundRect(ctx, x, y, width, height, radius, fill, stroke = ''){
+  const right = x + width, bottom = y + height;
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(right - radius, y); ctx.quadraticCurveTo(right, y, right, y + radius);
+  ctx.lineTo(right, bottom - radius); ctx.quadraticCurveTo(right, bottom, right - radius, bottom);
+  ctx.lineTo(x + radius, bottom); ctx.quadraticCurveTo(x, bottom, x, bottom - radius);
+  ctx.lineTo(x, y + radius); ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+  ctx.fillStyle = fill; ctx.fill();
+  if (stroke){ ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+}
+
+function screenshotCardSpecs(summary){
+  const specs = [{ kicker:'Summary', body:summary.tldr, summary:true }];
+  summary.cards.forEach((card, index) => specs.push({
+    kicker:`${index + 1} of ${summary.cards.length}`, title:card.heading || `Point ${index + 1}`, body:card.body,
+  }));
+  if (summary.takeaways.length) specs.push({
+    kicker:'Takeaways', title:'Worth remembering', items:summary.takeaways,
+  });
+  return specs;
+}
+
+function measureScreenshotCard(ctx, spec, width){
+  const inner = width - 64;
+  let height = 32 + 23 + 20;
+  if (spec.title){
+    screenshotFont(ctx, 700, 30);
+    spec.titleLines = screenshotLines(ctx, spec.title, inner);
+    height += spec.titleLines.length * 38 + 17;
+  }
+  screenshotFont(ctx, spec.summary ? 500 : 400, spec.summary ? 30 : 25);
+  const bodyWidth = inner - (spec.items ? 28 : 0);
+  if (spec.items){
+    spec.itemLines = spec.items.map((item) => screenshotLines(ctx, item, bodyWidth));
+    height += spec.itemLines.reduce((total, lines) => total + lines.length * 37 + 13, 0);
+  } else {
+    spec.bodyLines = screenshotLines(ctx, spec.body, bodyWidth);
+    height += spec.bodyLines.length * (spec.summary ? 44 : 38);
+  }
+  return Math.max(spec.summary ? 220 : 250, height + 34);
+}
+
+function drawScreenshotCard(ctx, spec, x, y, width, height){
+  screenshotRoundRect(ctx, x, y, width, height, 28,
+    spec.summary ? SCREENSHOT_COLORS.soft : SCREENSHOT_COLORS.surface, SCREENSHOT_COLORS.line);
+  const left = x + 32;
+  let cursor = y + 48;
+  screenshotFont(ctx, 700, 18);
+  ctx.fillStyle = SCREENSHOT_COLORS.accent;
+  ctx.fillText(spec.kicker.toUpperCase(), left, cursor);
+  cursor += 43;
+  if (spec.titleLines){
+    screenshotFont(ctx, 700, 30); ctx.fillStyle = SCREENSHOT_COLORS.text;
+    cursor = screenshotText(ctx, spec.titleLines, left, cursor, 38) + 17;
+  }
+  screenshotFont(ctx, spec.summary ? 500 : 400, spec.summary ? 30 : 25);
+  ctx.fillStyle = spec.summary ? SCREENSHOT_COLORS.text : SCREENSHOT_COLORS.muted;
+  if (spec.itemLines){
+    spec.itemLines.forEach((lines) => {
+      ctx.fillStyle = SCREENSHOT_COLORS.accent; ctx.fillText('•', left, cursor);
+      ctx.fillStyle = SCREENSHOT_COLORS.muted;
+      cursor = screenshotText(ctx, lines, left + 28, cursor, 37) + 13;
+    });
+  } else screenshotText(ctx, spec.bodyLines, left, cursor, spec.summary ? 44 : 38);
+}
+
+function screenshotTrustTone(result){
+  const state = trustState(result);
+  if (state === 'strong' || state === 'supported') return SCREENSHOT_COLORS.positive;
+  if (state === 'mixed' || state === 'limited') return SCREENSHOT_COLORS.warning;
+  if (state === 'concern') return SCREENSHOT_COLORS.danger;
+  return SCREENSHOT_COLORS.muted;
+}
+
+function measureScreenshotTrust(ctx, trust, width){
+  const result = trust ? normalizeTrustResult(trust) : null;
+  const inner = width - 64;
+  screenshotFont(ctx, 400, 24);
+  const summaryLines = screenshotLines(ctx, result?.summary || 'Assessment unavailable for this summary.', inner - 180);
+  screenshotFont(ctx, 400, 22);
+  const signals = result?.signals?.length
+    ? result.signals.map((signal) => ({ ...signal, lines:screenshotLines(ctx, signal.label, inner - 42) }))
+    : [{ type:'neutral', lines:['No detailed sourcing signals were available.'] }];
+  const signalHeight = signals.reduce((total, signal) => total + signal.lines.length * 32 + 10, 0);
+  return { result, summaryLines, signals, height:64 + 88 + summaryLines.length * 34 + 78 + signalHeight + 52 };
+}
+
+function drawScreenshotTrust(ctx, measured, x, y, width){
+  const { result, summaryLines, signals, height } = measured;
+  const tone = result ? screenshotTrustTone(result) : SCREENSHOT_COLORS.muted;
+  screenshotRoundRect(ctx, x, y, width, height, 28, SCREENSHOT_COLORS.surface, SCREENSHOT_COLORS.line);
+  const left = x + 32;
+  screenshotFont(ctx, 700, 20); ctx.fillStyle = tone;
+  ctx.fillText('TRUST & SOURCE', left, y + 43);
+  screenshotFont(ctx, 400, 17); ctx.fillStyle = SCREENSHOT_COLORS.muted;
+  ctx.textAlign = 'right';
+  ctx.fillText(`METHOD V${result?.methodologyVersion || TRUST_METHOD_VERSION}`, x + width - 32, y + 43);
+  ctx.textAlign = 'left';
+
+  const score = result?.sufficientInformation ? String(result.score) : '?';
+  screenshotFont(ctx, 750, 62); ctx.fillStyle = SCREENSHOT_COLORS.text;
+  ctx.fillText(score, left, y + 119);
+  const scoreWidth = ctx.measureText(score).width;
+  if (result?.sufficientInformation){
+    screenshotFont(ctx, 500, 18); ctx.fillStyle = SCREENSHOT_COLORS.muted;
+    ctx.fillText('/100', left + scoreWidth + 8, y + 119);
+  }
+  screenshotFont(ctx, 700, 27); ctx.fillStyle = SCREENSHOT_COLORS.text;
+  ctx.fillText(result?.label || 'Assessment unavailable', left + 180, y + 97);
+  screenshotFont(ctx, 400, 24); ctx.fillStyle = SCREENSHOT_COLORS.muted;
+  let cursor = screenshotText(ctx, summaryLines, left + 180, y + 132, 34) + 20;
+  if (result){
+    screenshotFont(ctx, 500, 18);
+    ctx.fillText(`Based on ${result.coveragePercent}% of available signals`, left + 180, cursor);
+  }
+
+  cursor = y + 64 + 88 + summaryLines.length * 34 + 30;
+  ctx.strokeStyle = SCREENSHOT_COLORS.line; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(left, cursor); ctx.lineTo(x + width - 32, cursor); ctx.stroke();
+  cursor += 43;
+  screenshotFont(ctx, 700, 21); ctx.fillStyle = SCREENSHOT_COLORS.text;
+  ctx.fillText('WHY THIS SCORE?', left, cursor);
+  cursor += 39;
+  screenshotFont(ctx, 400, 22);
+  signals.forEach((signal) => {
+    ctx.fillStyle = signal.type === 'positive' ? SCREENSHOT_COLORS.positive
+      : signal.type === 'limitation' ? SCREENSHOT_COLORS.warning : SCREENSHOT_COLORS.muted;
+    ctx.fillText(signal.type === 'positive' ? '+' : signal.type === 'limitation' ? '!' : '–', left, cursor);
+    ctx.fillStyle = SCREENSHOT_COLORS.muted;
+    cursor = screenshotText(ctx, signal.lines, left + 34, cursor, 32) + 10;
+  });
+}
+
+function createSummaryScreenshot(){
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const contentWidth = SCREENSHOT_WIDTH - SCREENSHOT_PAD * 2;
+  const cardWidth = (contentWidth - SCREENSHOT_GAP) / 2;
+  const cards = screenshotCardSpecs(shared.summary);
+  const trust = measureScreenshotTrust(ctx, shared.meta.trust, contentWidth);
+
+  const summaryHeight = measureScreenshotCard(ctx, cards[0], contentWidth);
+  let cardGridHeight = summaryHeight;
+  const rows = [];
+  for (let index = 1; index < cards.length; index += 2){
+    const leftCard = cards[index];
+    const rightCard = cards[index + 1];
+    const rowHeight = Math.max(measureScreenshotCard(ctx, leftCard, cardWidth),
+      rightCard ? measureScreenshotCard(ctx, rightCard, cardWidth) : 0);
+    rows.push({ leftCard, rightCard, height:rowHeight });
+    cardGridHeight += SCREENSHOT_GAP + rowHeight;
+  }
+
+  screenshotFont(ctx, 750, 48);
+  const titleLines = screenshotLines(ctx, shared.meta.title || 'Untitled article', contentWidth);
+  const headerHeight = 152 + titleLines.length * 58 + 54;
+  canvas.width = SCREENSHOT_WIDTH;
+  canvas.height = SCREENSHOT_PAD + headerHeight + trust.height + 48 + cardGridHeight + 82;
+
+  // Assigning canvas dimensions resets the drawing context state.
+  ctx.fillStyle = SCREENSHOT_COLORS.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const gradient = ctx.createLinearGradient(SCREENSHOT_PAD, SCREENSHOT_PAD, SCREENSHOT_PAD + 58, SCREENSHOT_PAD + 58);
+  gradient.addColorStop(0, SCREENSHOT_COLORS.accent); gradient.addColorStop(1, '#b66ee8');
+  screenshotRoundRect(ctx, SCREENSHOT_PAD, SCREENSHOT_PAD, 58, 58, 17, gradient);
+  screenshotFont(ctx, 750, 47); ctx.fillStyle = SCREENSHOT_COLORS.text;
+  ctx.fillText('TLDR Me -', SCREENSHOT_PAD + 82, SCREENSHOT_PAD + 46);
+  const brandWidth = ctx.measureText('TLDR Me -').width;
+  screenshotFont(ctx, 400, 34); ctx.fillStyle = SCREENSHOT_COLORS.muted;
+  ctx.fillText('Summaries that run on your device', SCREENSHOT_PAD + 82 + brandWidth + 13, SCREENSHOT_PAD + 46);
+
+  let cursor = SCREENSHOT_PAD + 116;
+  screenshotFont(ctx, 750, 48); ctx.fillStyle = SCREENSHOT_COLORS.text;
+  cursor = screenshotText(ctx, titleLines, SCREENSHOT_PAD, cursor, 58) + 18;
+  screenshotFont(ctx, 500, 23); ctx.fillStyle = SCREENSHOT_COLORS.muted;
+  ctx.fillText(formatPublished(shared.meta.published)
+    ? `Published ${formatPublished(shared.meta.published)}` : 'Published date unavailable', SCREENSHOT_PAD, cursor);
+  cursor = SCREENSHOT_PAD + headerHeight;
+
+  drawScreenshotTrust(ctx, trust, SCREENSHOT_PAD, cursor, contentWidth);
+  cursor += trust.height + 48;
+  drawScreenshotCard(ctx, cards[0], SCREENSHOT_PAD, cursor, contentWidth, summaryHeight);
+  cursor += summaryHeight + SCREENSHOT_GAP;
+  rows.forEach((row) => {
+    drawScreenshotCard(ctx, row.leftCard, SCREENSHOT_PAD, cursor, cardWidth, row.height);
+    if (row.rightCard) drawScreenshotCard(ctx, row.rightCard, SCREENSHOT_PAD + cardWidth + SCREENSHOT_GAP, cursor, cardWidth, row.height);
+    cursor += row.height + SCREENSHOT_GAP;
+  });
+  screenshotFont(ctx, 600, 20); ctx.fillStyle = SCREENSHOT_COLORS.muted;
+  ctx.fillText('Created privately on your device with TLDR Me', SCREENSHOT_PAD, canvas.height - 46);
+  return canvas;
+}
+
+function screenshotBlob(canvas){
+  return new Promise((resolve, reject) => canvas.toBlob(
+    (blob) => blob ? resolve(blob) : reject(new Error('The screenshot could not be encoded.')), 'image/png'));
+}
+
+function screenshotFilename(){
+  const slug = (shared?.meta.title || 'summary').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48);
+  return `tldr-me-${slug || 'summary'}.png`;
+}
+
+function downloadScreenshot(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url; anchor.download = filename; anchor.style.display = 'none';
+  document.body.appendChild(anchor); anchor.click(); anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+els.shScreenshot.addEventListener('click', async () => {
+  if (!isMobile || !shared || els.shScreenshot.disabled) return;
+  els.shScreenshot.disabled = true;
+  toast('Creating screenshot…');
+  try {
+    const blob = await screenshotBlob(createSummaryScreenshot());
+    const filename = screenshotFilename();
+    const file = new File([blob], filename, { type:'image/png' });
+    // iOS browsers cannot write to Photos. The system share sheet is the only
+    // web-safe route to its Save Image action; Android downloads are indexed by
+    // the device gallery without another permission prompt.
+    if (isIOS && navigator.share && navigator.canShare?.({ files:[file] })){
+      await navigator.share({ files:[file], title:`TLDR Me — ${shared.meta.title || 'Summary'}` });
+      toast('Choose Save Image to add it to Photos');
+    } else {
+      downloadScreenshot(blob, filename);
+      toast('Screenshot saved to your device');
+    }
+  } catch (error){
+    if (error?.name !== 'AbortError'){
+      console.error('Screenshot export failed', error);
+      toast('Could not save the screenshot');
+    }
+  } finally {
+    els.shScreenshot.disabled = false;
+  }
 });
 
 /* ---------------- 9. wire it up ---------------- */
