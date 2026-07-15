@@ -54,6 +54,15 @@ test('publisher fame alone cannot create a high score', () => {
   assert.ok(result.score < 70, `expected below 70, got ${result.score}`);
 });
 
+test('author and publisher metadata do not affect the assessment', () => {
+  const withDetails = scoreTrustSignals(extractTrustSignals(article(), '', null, strongChecks));
+  const withoutDetails = scoreTrustSignals(extractTrustSignals(article({ author: '', publisher: '' }), '', null, strongChecks));
+  assert.equal(withoutDetails.score, withDetails.score);
+  assert.equal(withoutDetails.coveragePercent, withDetails.coveragePercent);
+  assert.deepEqual(withoutDetails.categories, withDetails.categories);
+  assert.deepEqual(withoutDetails.signals, withDetails.signals);
+});
+
 test('small publishers can score well when observable evidence is strong', () => {
   const small = article({ publisher: 'Local Desk', sourceUrl: 'https://small.example/report' });
   const result = scoreTrustSignals(extractTrustSignals(small, '', {
@@ -102,7 +111,7 @@ test('WASM-style heuristic extraction uses the same deterministic scorer', () =>
 test('unavailable optional publisher checks degrade gracefully', () => {
   const result = scoreTrustSignals(extractTrustSignals(article(), '', null, {}));
   assert.ok(Number.isInteger(result.score));
-  assert.equal(result.categories.publisherTransparency.assessable, 5);
+  assert.equal(result.categories.publisherTransparency.assessable, 0);
 });
 
 test('compact shared results round-trip and malformed values are clamped', () => {

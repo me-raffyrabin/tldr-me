@@ -1,13 +1,14 @@
-export const TRUST_METHOD_VERSION = 1;
+export const TRUST_METHOD_VERSION = 2;
 export const TRUST_CACHE_TTL = 24 * 60 * 60 * 1000;
 
 const MAXIMUMS = {
   evidence: 30,
-  attribution: 20,
-  publisherTransparency: 20,
+  attribution: 15,
+  publisherTransparency: 15,
   freshnessIntegrity: 15,
   corroboration: 15,
 };
+const TOTAL_SCORING_POINTS = Object.values(MAXIMUMS).reduce((sum, points) => sum + points, 0);
 
 const ARTICLE_TYPES = new Set(['news', 'analysis', 'opinion', 'satire', 'sponsored', 'unknown']);
 const CLAIM_LEVELS = new Set(['strong', 'moderate', 'weak', 'unknown']);
@@ -99,8 +100,6 @@ export function extractTrustSignals(article = {}, articleUrl = '', modelValue = 
     articleUrl: article.sourceUrl || articleUrl || '',
     articleType,
     articleTypeExplicit: !!metadata.hasArticleType,
-    hasAuthor: !!article.author,
-    hasPublisher: !!article.publisher,
     hasPublishedDate: !!article.published,
     hasModifiedDate: !!article.modified,
     hasStructuredData: !!metadata.hasStructuredData,
@@ -167,7 +166,6 @@ export function scoreTrustSignals(signals = {}){
     categories.evidence.earned -= 4;
   }
 
-  assess(categories.attribution, 5, true, signals.hasAuthor || signals.hasPublisher);
   assess(categories.attribution, 4, hasTextSignals, signals.namedSourceCount >= 1);
   assess(categories.attribution, 3, signals.anonymousSourceCount > 0, !!signals.anonymousContextProvided);
   assess(categories.attribution, 3, true, signals.attributionCount >= 2 || ['strong', 'moderate'].includes(signals.attributedClaimLevel));
@@ -176,7 +174,6 @@ export function scoreTrustSignals(signals = {}){
   assess(categories.attribution, 1, true, !!signals.articleTypeExplicit);
 
   const checks = signals.publisherChecks || {};
-  assess(categories.publisherTransparency, 5, true, !!signals.hasPublisher);
   assess(categories.publisherTransparency, 4, !!checks.aboutAssessed, !!checks.ownershipDisclosed);
   assess(categories.publisherTransparency, 3, !!checks.aboutAssessed, !!checks.editorialLeadership);
   assess(categories.publisherTransparency, 3, !!checks.standardsAssessed, !!checks.correctionsPolicy);
@@ -210,12 +207,10 @@ export function scoreTrustSignals(signals = {}){
 
   if (signals.primarySourceCount > 0) addSignal(notes, 'positive', `${signals.primarySourceCount} primary or official source${signals.primarySourceCount === 1 ? '' : 's'} identified`);
   if (signals.namedSourceCount > 0) addSignal(notes, 'positive', `${signals.namedSourceCount} named source${signals.namedSourceCount === 1 ? '' : 's'} identified`);
-  if (signals.hasAuthor && signals.hasPublisher) addSignal(notes, 'positive', 'Author and publisher identified');
   if (checks.correctionsPolicy) addSignal(notes, 'positive', 'Publisher corrections or standards policy found');
   if (signals.hasPublishedDate && signals.hasModifiedDate) addSignal(notes, 'positive', 'Publication and update dates available');
   if (signals.anonymousSourceCount > 0) addSignal(notes, 'limitation', `${signals.anonymousSourceCount} anonymous-source reference${signals.anonymousSourceCount === 1 ? '' : 's'} found`);
   if (!corroborationFound) addSignal(notes, 'unassessed', 'Independent corroboration was not established');
-  if (!signals.hasAuthor && !signals.hasPublisher) addSignal(notes, 'limitation', 'Author and publisher details were unavailable');
   if (!signals.hasPublishedDate) addSignal(notes, 'limitation', 'Publication date was unavailable');
 
   const adjustments = [];
@@ -225,7 +220,7 @@ export function scoreTrustSignals(signals = {}){
   const adjustmentTotal = clamp(adjustments.reduce((sum, item) => sum + item.points, 0), -35, 5);
   const earnedPoints = Object.values(categories).reduce((sum, item) => sum + item.earned, 0);
   const assessablePoints = Object.values(categories).reduce((sum, item) => sum + item.assessable, 0);
-  const coveragePercent = Math.round(clamp(assessablePoints, 0, 100));
+  const coveragePercent = Math.round(clamp((assessablePoints / TOTAL_SCORING_POINTS) * 100, 0, 100));
   const rawScore = assessablePoints ? (earnedPoints / assessablePoints) * 100 : 0;
   const coveragePenalty = coveragePercent >= 85 ? 0 : coveragePercent >= 70 ? 3 : coveragePercent >= 50 ? 7 : 0;
   let score = Math.round(clamp(rawScore - coveragePenalty + adjustmentTotal, 0, 100));
@@ -243,9 +238,7 @@ export function scoreTrustSignals(signals = {}){
     ? 'Primary evidence identified'
     : signals.namedSourceCount > 0
       ? 'Named sourcing identified'
-      : signals.hasAuthor || signals.hasPublisher
-        ? 'Source accountability identified'
-        : 'Few positive signals were assessable';
+      : 'Few positive signals were assessable';
   const mainLimitation = !corroborationFound
     ? 'Independent corroboration not established'
     : !signals.hasPublishedDate
