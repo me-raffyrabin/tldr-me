@@ -6,6 +6,56 @@ export class ReaderTimeoutError extends Error {
   }
 }
 
+function plainMarkdownLine(line){
+  return String(line || '')
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/[*_`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function plausibleAuthor(value){
+  const author = plainMarkdownLine(value)
+    .replace(/^(?:by\s*)+/i, '')
+    .replace(/\s+(?:\||•)\s+.*$/, '')
+    .trim();
+  if (!author || author.length > 120 || /https?:|www\.|@/i.test(author)) return '';
+  if (author.split(/\s+/).length > 10 || !/\p{L}/u.test(author)) return '';
+  if (/^(?:clicking|using|submitting|continuing|signing|comparison|contrast|design|default|law|the time)\b/i.test(author)) return '';
+  if (!/^[\p{L}\p{M}][\p{L}\p{M}'’.\-–,&\s]+$/u.test(author)) return '';
+  return author;
+}
+
+// Jina commonly leaves a publisher's visible byline in the Markdown instead
+// of promoting it to an `Author:` metadata field. Only inspect standalone
+// lines near the article start so prose containing "by" is never treated as a
+// byline.
+export function authorFromReaderMarkdown(markdown){
+  const lines = String(markdown || '').slice(0, 6000).split(/\r?\n/).slice(0, 60);
+  for (let i = 0; i < lines.length; i++){
+    const line = plainMarkdownLine(lines[i]);
+    const inline = line.match(/^by[\s\u00a0:–—-]+(.+)$/i);
+    if (inline){
+      const author = plausibleAuthor(inline[1]);
+      if (author) return author;
+    }
+    if (/^by:?$/i.test(line)){
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++){
+        const next = plainMarkdownLine(lines[j]);
+        if (!next) continue;
+        const author = plausibleAuthor(next);
+        if (author) return author;
+        break;
+      }
+    }
+  }
+  return '';
+}
+
 // The timeout covers both response headers and the complete body. Promise.race
 // is intentional: some WebKit/network combinations do not promptly reject a
 // stalled response body when AbortController fires.
