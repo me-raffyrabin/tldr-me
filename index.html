@@ -700,7 +700,9 @@ const SYSTEM = `You summarize web articles for busy readers. Reply with JSON onl
 // Grammar-constrained decoding: a 0.5B model won't reliably hand-write valid
 // JSON, so we make invalid JSON undecodable rather than trying to repair it.
 const CARD_PROPS = {
-  tldr:{ type:'string' },
+  // Length bounds are grammar-enforced, so the summary card really gets its
+  // 2-3 sentences — the model ignores the prompt's word count about half the time.
+  tldr:{ type:'string', minLength:140, maxLength:500 },
   cards:{
     type:'array', minItems:3, maxItems:5,
     items:{ type:'object',
@@ -752,16 +754,58 @@ ARTICLE:
 ${body}`;
 }
 
-async function summarizeWebLLM(doc, focus = []){
+async function summarizeWebLLM(doc, focus = [], attempt = 0){
   const reply = await llm.chat.completions.create({
     messages: [{role:'system', content:SYSTEM}, {role:'user', content:userPrompt(doc, focus)}],
-    temperature: 0.3, max_tokens: 1200,
+    // The 0.5B model sometimes falls into a repetition loop ("X, X, X, …")
+    // inside a string — the grammar can't prevent that — until max_tokens cuts
+    // the JSON off mid-structure. The frequency penalty makes loops rare; the
+    // retry re-rolls hotter to escape one.
+    temperature: attempt ? 0.7 : 0.3, max_tokens: 1200,
+    frequency_penalty: 0.5,
     response_format: { type:'json_object', schema: JSON.stringify(focus.length ? SCHEMA_FOCUS : SCHEMA) },
   });
   const raw = reply.choices[0].message.content || '';
   const parsed = parseJSON(raw);
   if (parsed) return normalize(parsed);
+  if (attempt < 1) return summarizeWebLLM(doc, focus, attempt + 1);
+  const salvaged = repairJSON(raw);
+  if (salvaged) return normalize(salvaged);
   throw new Error('The model returned an unreadable summary. Try again.');
+}
+
+// Salvage a reply that was cut off mid-JSON: rewind to the most recent point
+// where a complete value ended, close every bracket still open, and parse
+// that. The incomplete trailing value — usually the runaway repetition that
+// ate the token budget — is discarded. Returns the parsed object, or null.
+function repairJSON(raw){
+  const s = raw.indexOf('{');
+  if (s === -1) return null;
+  const cands = [];                    // [cut index, closers needed there]
+  const stack = [];
+  let inStr = false, esc = false;
+  for (let i = s; i < raw.length; i++){
+    const ch = raw[i];
+    if (inStr){
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"'){ inStr = false; cands.push([i, stack.slice().reverse().join('')]); }
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{' || ch === '[') stack.push(ch === '{' ? '}' : ']');
+    else if (ch === '}' || ch === ']'){
+      if (!stack.length) break;
+      stack.pop();
+      cands.push([i, stack.slice().reverse().join('')]);
+    }
+  }
+  // A candidate can land after an object key rather than a value ("heading"
+  // with no colon yet), which won't close cleanly — just try the next one back.
+  for (let k = cands.length - 1, tries = 0; k >= 0 && tries < 40; k--, tries++){
+    try { return JSON.parse(raw.slice(s, cands[k][0] + 1) + cands[k][1]); } catch {}
+  }
+  return null;
 }
 
 async function summarizeWasm(doc, focus = []){
