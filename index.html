@@ -40,6 +40,9 @@
       --danger:#ff6b6b; --shadow:0 1px 2px rgba(0,0,0,.4),0 16px 40px -16px rgba(0,0,0,.7);
   }
   *,*::before,*::after{box-sizing:border-box}
+  /* Author display rules (e.g. .recents-toggle's inline-flex) beat the UA's
+     [hidden]{display:none}, so "Recent" stayed visible after Clear all. */
+  [hidden]{display:none!important}
   html{-webkit-text-size-adjust:100%}
   body{
     margin:0; background:var(--bg); color:var(--text);
@@ -139,6 +142,7 @@
   .src{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px}
   .src .host{font-size:12px;color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--line)}
   .doc-title{font-size:20px;font-weight:650;letter-spacing:-.02em;margin:0 0 18px;line-height:1.3}
+  .doc-date{margin:-14px 0 18px;font-size:12.5px;color:var(--muted)}
 
   /* ---------- tags ---------- */
   .tags{display:none;margin:-6px 0 20px}
@@ -425,6 +429,7 @@
       <span class="host" id="readtime"></span>
     </div>
     <h2 class="doc-title" id="docTitle"></h2>
+    <p class="doc-date" id="docDate" hidden></p>
 
     <div class="tags" id="tags">
       <div class="tags-head">
@@ -520,7 +525,7 @@ const els = {
   form:$('form'), url:$('url'), go:$('go'), clear:$('clear'), hint:$('hint'),
   bar:$('bar'), fill:$('barFill'), dot:$('dot'), statusText:$('statusText'),
   results:$('results'), rail:$('rail'), dots:$('dots'), host:$('host'),
-  docTitle:$('docTitle'), readtime:$('readtime'), prev:$('prev'), next:$('next'),
+  docTitle:$('docTitle'), docDate:$('docDate'), readtime:$('readtime'), prev:$('prev'), next:$('next'),
   railLabel:$('railLabel'), swipeHint:$('swipeHint'),
   recents:$('recents'), recentsLabel:$('recentsLabel'), chips:$('chips'),
   recentsToggle:$('recentsToggle'), recentsCount:$('recentsCount'),
@@ -622,9 +627,10 @@ async function loadPage(target){
   throw new Error('Could not read that page. It may be paywalled, private, or blocking readers. ' + (lastErr?.message || ''));
 }
 
-// r.jina.ai returns "Title: …\nURL Source: …\nMarkdown Content:\n…"
+// r.jina.ai returns "Title: …\nURL Source: …\n[Published Time: …]\nMarkdown Content:\n…"
 function fromReaderText(body){
   const title = (body.match(/^Title:\s*(.+)$/m) || [,''])[1].trim();
+  const published = (body.match(/^Published Time:\s*(.+)$/m) || [,''])[1].trim();
   const split = body.split(/Markdown Content:\s*/);
   let md = (split.length > 1 ? split.slice(1).join('') : body);
   const text = md
@@ -635,7 +641,7 @@ function fromReaderText(body){
     .replace(/[*_`]/g, '')
     .replace(/\n{2,}/g, '\n\n')
     .trim();
-  return { title, text: clean(text) };
+  return { title, published, text: clean(text) };
 }
 
 function fromHTML(html){
@@ -647,7 +653,36 @@ function fromHTML(html){
     .filter(t => t.length > 40);
   const title = (doc.querySelector('meta[property="og:title"]')?.content
                || doc.querySelector('title')?.textContent || '').trim();
-  return { title, text: clean(parts.join('\n\n') || root.textContent) };
+  return { title, published: publishedFromDOM(doc), text: clean(parts.join('\n\n') || root.textContent) };
+}
+
+function publishedFromDOM(doc){
+  const meta = doc.querySelector(
+    'meta[property="article:published_time"],meta[itemprop="datePublished"],' +
+    'meta[name="pubdate"],meta[name="publish-date"],meta[name="date"],meta[name="parsely-pub-date"]')?.content;
+  if (meta) return meta.trim();
+  for (const s of doc.querySelectorAll('script[type="application/ld+json"]')){
+    try{
+      const o = JSON.parse(s.textContent);
+      for (const it of (Array.isArray(o) ? o : o['@graph'] || [o])){
+        if (it?.datePublished) return String(it.datePublished).trim();
+      }
+    } catch {}
+  }
+  return doc.querySelector('article time[datetime],time[datetime]')?.getAttribute('datetime')?.trim() || '';
+}
+
+// Publishers write dates in every format imaginable; only show ones the Date
+// parser actually understood, and only show a clock time if the source had one.
+function formatPublished(s){
+  if (!s) return '';
+  const d = new Date(s);
+  if (isNaN(d)) return '';
+  const date = d.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' });
+  const hasTime = /[T\s]\d{1,2}:\d{2}/.test(s);
+  return hasTime
+    ? `${date} · ${d.toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' })}`
+    : date;
 }
 
 function clean(t){
@@ -700,7 +735,8 @@ says little about ${focus.length > 1 ? 'them' : 'it'}, say so plainly rather tha
 
   return `Summarize the article below for someone who has not read it.
 ${lens}
-- tldr: one sentence, at most 30 words, the single most important point.
+- tldr: a summary of the whole article in 2 to 3 sentences, covering its most
+  important points.
 - cards: 3 to 5 distinct main points, each covering different ground. heading is a
   2-5 word title naming that point (never a number, never "Point 1"). body is 2-3
   plain sentences.
@@ -755,8 +791,8 @@ async function summarizeWasm(doc, focus = []){
   if (!cards.length) throw new Error('The model could not summarize that page.');
 
   const tldr = cards.length > 1
-    ? (await llm(cards.map(c=>c.body).join(' ').slice(0,3000), { max_new_tokens:60, min_new_tokens:20, do_sample:false }))[0].summary_text.trim()
-    : firstSentences(cards[0].body, 1);
+    ? (await llm(cards.map(c=>c.body).join(' ').slice(0,3000), { max_new_tokens:110, min_new_tokens:45, do_sample:false }))[0].summary_text.trim()
+    : firstSentences(cards[0].body, 3);
 
   return normalize({
     tldr, cards,
@@ -902,6 +938,7 @@ function skeleton(keepMeta){
   if (!keepMeta){
     els.docTitle.textContent = 'Reading and summarizing…';
     els.host.textContent = ''; els.readtime.textContent = '';
+    els.docDate.textContent = ''; els.docDate.hidden = true;
   }
   els.railLabel.textContent = 'Working locally';
   els.swipeHint.textContent = 'The model is running on your device — this can take a moment.';
@@ -915,7 +952,7 @@ function build(summary, meta){
 
   const tl = document.createElement('article');
   tl.className = 'card tldr';
-  tl.innerHTML = `<span class="kicker">TLDR</span><p></p>`;
+  tl.innerHTML = `<span class="kicker">Summary</span><p></p>`;
   tl.querySelector('p').textContent = summary.tldr;
   cards.push(tl);
 
@@ -939,9 +976,14 @@ function build(summary, meta){
 
   let host = meta.url;
   try { host = new URL(meta.url).hostname.replace(/^www\./,''); } catch {}
-  els.host.textContent = host; els.host.href = meta.url;
+  els.host.textContent = 'Read Full Story';
+  els.host.href = meta.url;
+  els.host.title = meta.url;
   els.readtime.textContent = meta.read ? '· original: ' + meta.read : '';
   els.docTitle.textContent = meta.title || host;
+  const published = formatPublished(meta.published);
+  els.docDate.textContent = published ? 'Published ' + published : '';
+  els.docDate.hidden = !published;
   els.railLabel.textContent = `${cards.length} cards`;
   els.swipeHint.textContent = 'Swipe or use ← → to move between cards';
 
@@ -1281,9 +1323,64 @@ const shareBase = () => shared
   ? location.origin + location.pathname + '?u=' + encodeURIComponent(shared.meta.url)
   : location.href;
 
+// A new article invalidates any shortening still in flight for the old one.
+let shareSeq = 0;
+
 async function refreshShareUrl(){
+  const seq = ++shareSeq;
   shareUrl = shareBase();          // usable immediately, upgraded once packed
-  try { shareUrl = await shareLink(); } catch { /* keep the base link */ }
+  try {
+    const long = await shareLink();
+    if (seq !== shareSeq) return;
+    shareUrl = long;
+    // Upgrade once more to a short, readable link. If the shortener is down or
+    // the custom alias is taken, the long link keeps working.
+    const short = await shortenUrl(long);
+    if (short && seq === shareSeq) shareUrl = short;
+  } catch { /* keep the base link */ }
+}
+
+// da.gd silently truncates aliases to 10 chars, so build one that exactly
+// fits: "tldr_" + 5 random chars, e.g. da.gd/tldr_x8f2q
+const dagdAlias = () => 'tldr_' + Math.random().toString(36).slice(2, 7);
+
+// is.gd allows 30 chars — room for a slug from the article title, e.g.
+// is.gd/tldr_quantum_chips_x4f2. Only a-z, 0-9 and underscore are accepted.
+function isgdAlias(){
+  const slug = (shared?.meta.title || '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    .split('_').filter(Boolean).slice(0, 3).join('_');
+  const rand = Math.random().toString(36).slice(2, 6);
+  return ('tldr_' + (slug ? slug + '_' : '') + rand).slice(0, 30);
+}
+
+async function shortenUrl(longUrl){
+  const enc = encodeURIComponent(longUrl);
+  const proxied = (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`;
+  const services = [
+    // da.gd answers with CORS and redirects cleanly; two tries in case the
+    // random alias collides.
+    `https://da.gd/shorten?url=${enc}&shorturl=${dagdAlias()}`,
+    `https://da.gd/shorten?url=${enc}&shorturl=${dagdAlias()}`,
+    // is.gd takes a prettier alias but sends no CORS headers, so it goes
+    // through the same proxy the readers already use.
+    proxied(`https://is.gd/create.php?format=simple&shorturl=${isgdAlias()}&url=${enc}`),
+    // Last resort: TinyURL's anonymous API — no alias, and it shows a brief
+    // interstitial page before redirecting.
+    `https://tinyurl.com/api-create.php?url=${enc}`,
+  ];
+  for (const svc of services){
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(svc, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!res.ok) continue;
+      const out = (await res.text()).trim();
+      if (/^https:\/\/\S+$/.test(out) && out.length < longUrl.length) return out;
+    } catch { /* try the next service */ }
+  }
+  return null;
 }
 
 async function shareLink(){
@@ -1292,7 +1389,7 @@ async function shareLink(){
   if (!('CompressionStream' in window)) return base;
   try {
     const payload = JSON.stringify({
-      t: shared.meta.title, r: shared.meta.read,
+      t: shared.meta.title, r: shared.meta.read, p: shared.meta.published || '',
       s: shared.summary.tldr,
       c: shared.summary.cards.map(c => [c.heading, c.body]),
       k: shared.summary.takeaways,
@@ -1320,7 +1417,7 @@ async function readSharedSummary(){
         takeaways: o.k || [],
         tags: o.g || [],
       }),
-      meta: { title: o.t, url, read: o.r },
+      meta: { title: o.t, url, read: o.r, published: o.p || '' },
       focus: Array.isArray(o.f) ? o.f.slice(0, MAX_TAGS) : [],
     };
   } catch { return { url, summary: null }; }
@@ -1389,7 +1486,7 @@ els.form.addEventListener('submit', async (e) => {
     const summary = await summarize(doc);
     progress(null);
 
-    const meta = { title: doc.title, url: target, read: readTime(doc.text) };
+    const meta = { title: doc.title, url: target, read: readTime(doc.text), published: doc.published || '' };
     current = { base: summary, meta, tags: summary.tags || [], article: doc, focus: [] };
     build(summary, meta);
     renderTags();
