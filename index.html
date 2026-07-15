@@ -2053,6 +2053,30 @@ function screenshotText(ctx, lines, x, y, lineHeight){
   return y + lines.length * lineHeight;
 }
 
+function screenshotUrlLines(ctx, value, maxWidth){
+  const url = String(value || 'Source URL unavailable');
+  const lines = [];
+  let line = '';
+  for (const char of url){
+    const candidate = line + char;
+    if (!line || ctx.measureText(candidate).width <= maxWidth){
+      line = candidate;
+      continue;
+    }
+    const breakAt = Math.max(line.lastIndexOf('/'), line.lastIndexOf('?'), line.lastIndexOf('&'),
+      line.lastIndexOf('='), line.lastIndexOf('-'), line.lastIndexOf('_'));
+    if (breakAt > 12){
+      lines.push(line.slice(0, breakAt + 1));
+      line = line.slice(breakAt + 1) + char;
+    } else {
+      lines.push(line);
+      line = char;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : ['Source URL unavailable'];
+}
+
 function screenshotRoundRect(ctx, x, y, width, height, radius, fill, stroke = ''){
   const right = x + width, bottom = y + height;
   ctx.beginPath();
@@ -2119,6 +2143,23 @@ function drawScreenshotCard(ctx, spec, x, y, width, height){
       cursor = screenshotText(ctx, lines, left + 28, cursor, 37) + 13;
     });
   } else screenshotText(ctx, spec.bodyLines, left, cursor, spec.summary ? 44 : 38);
+}
+
+function measureScreenshotSource(ctx, sourceUrl, width){
+  screenshotFont(ctx, 500, 23);
+  const lines = screenshotUrlLines(ctx, sourceUrl, width - 76);
+  return { lines, height:82 + lines.length * 32 };
+}
+
+function drawScreenshotSource(ctx, measured, x, y, width){
+  screenshotRoundRect(ctx, x, y, width, measured.height, 24,
+    SCREENSHOT_COLORS.soft, SCREENSHOT_COLORS.accent);
+  screenshotRoundRect(ctx, x + 18, y + 20, 7, measured.height - 40, 4, SCREENSHOT_COLORS.accent);
+  const left = x + 42;
+  screenshotFont(ctx, 750, 18); ctx.fillStyle = SCREENSHOT_COLORS.accent;
+  ctx.fillText('FULL SOURCE URL', left, y + 39);
+  screenshotFont(ctx, 500, 23); ctx.fillStyle = SCREENSHOT_COLORS.text;
+  screenshotText(ctx, measured.lines, left, y + 78, 32);
 }
 
 function screenshotTrustTone(result){
@@ -2194,6 +2235,7 @@ function createSummaryScreenshot(){
   const contentWidth = SCREENSHOT_WIDTH - SCREENSHOT_PAD * 2;
   const cardWidth = (contentWidth - SCREENSHOT_GAP) / 2;
   const cards = screenshotCardSpecs(shared.summary);
+  const source = measureScreenshotSource(ctx, shared.meta.url, contentWidth);
   const trust = measureScreenshotTrust(ctx, shared.meta.trust, contentWidth);
 
   const summaryHeight = measureScreenshotCard(ctx, cards[0], contentWidth);
@@ -2212,7 +2254,8 @@ function createSummaryScreenshot(){
   const titleLines = screenshotLines(ctx, shared.meta.title || 'Untitled article', contentWidth);
   const headerHeight = 152 + titleLines.length * 58 + 54;
   canvas.width = SCREENSHOT_WIDTH;
-  canvas.height = SCREENSHOT_PAD + headerHeight + trust.height + 48 + cardGridHeight + 82;
+  canvas.height = SCREENSHOT_PAD + headerHeight + source.height + SCREENSHOT_GAP
+    + trust.height + 48 + cardGridHeight + 82;
 
   // Assigning canvas dimensions resets the drawing context state.
   ctx.fillStyle = SCREENSHOT_COLORS.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -2233,6 +2276,8 @@ function createSummaryScreenshot(){
     ? `Published ${formatPublished(shared.meta.published)}` : 'Published date unavailable', SCREENSHOT_PAD, cursor);
   cursor = SCREENSHOT_PAD + headerHeight;
 
+  drawScreenshotSource(ctx, source, SCREENSHOT_PAD, cursor, contentWidth);
+  cursor += source.height + SCREENSHOT_GAP;
   drawScreenshotTrust(ctx, trust, SCREENSHOT_PAD, cursor, contentWidth);
   cursor += trust.height + 48;
   drawScreenshotCard(ctx, cards[0], SCREENSHOT_PAD, cursor, contentWidth, summaryHeight);

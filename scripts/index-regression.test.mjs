@@ -44,6 +44,10 @@ test('screenshot export is mobile-only and includes the requested sections', () 
   assert.match(handler, /createSummaryScreenshot\(\)/);
   assert.match(source, /TLDR Me -/);
   assert.match(source, /Summaries that run on your device/);
+  assert.match(source, /FULL SOURCE URL/);
+  assert.match(source, /measureScreenshotSource\(ctx, shared\.meta\.url, contentWidth\)/);
+  assert.ok(source.indexOf('drawScreenshotSource(ctx, source') < source.indexOf('drawScreenshotTrust(ctx, trust'),
+    'the full source URL must render above Trust & Source');
   assert.match(source, /WHY THIS SCORE\?/);
   assert.match(source, /screenshotCardSpecs\(shared\.summary\)/);
 });
