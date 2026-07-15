@@ -9,10 +9,11 @@
  * into this cache would be wasteful and would fight their eviction logic.
  */
 
-const CACHE = 'tldrme-shell-v2';
+const CACHE = 'tldrme-shell-v3';
 const SHELL = [
   './',
   './index.html',
+  './trust-engine.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

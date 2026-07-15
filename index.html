@@ -144,6 +144,57 @@
   .doc-title{font-size:20px;font-weight:650;letter-spacing:-.02em;margin:0 0 18px;line-height:1.3}
   .doc-date{margin:-14px 0 18px;font-size:12.5px;color:var(--muted)}
 
+  /* ---------- trust & source ---------- */
+  .trust-source{
+    --trust-tone:var(--accent);
+    margin:-4px 0 24px;padding:17px 18px 16px;
+    background:var(--bg-soft);border:1px solid var(--line);border-radius:var(--radius);
+  }
+  .trust-source.state-strong{--trust-tone:#16845b}
+  .trust-source.state-supported{--trust-tone:#39765f}
+  .trust-source.state-mixed{--trust-tone:#a66a12}
+  .trust-source.state-limited{--trust-tone:#8a6640}
+  .trust-source.state-concern{--trust-tone:var(--danger)}
+  .trust-source.state-unknown{--trust-tone:var(--muted)}
+  .trust-source-head{display:flex;align-items:center;gap:8px;margin-bottom:13px;color:var(--muted)}
+  .trust-source-head svg{width:16px;height:16px;fill:none;stroke:var(--trust-tone);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .trust-source-title{font-size:11.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+  .trust-source-version{margin-left:auto;font-size:10.5px;color:var(--muted)}
+  .trust-source-main{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px;align-items:center}
+  .trust-source-score{display:flex;align-items:baseline;min-width:68px;line-height:1}
+  .trust-source-score strong{font-size:38px;font-weight:700;letter-spacing:-.055em;color:var(--text)}
+  .trust-source-score span{font-size:12px;color:var(--muted);margin-left:3px}
+  .trust-source-result{min-width:0}
+  .trust-source-label{display:block;margin-bottom:7px;font-size:14px;font-weight:650;line-height:1.25}
+  .trust-source-meter{height:7px;overflow:hidden;background:var(--line);border-radius:99px}
+  .trust-source-meter span{display:block;width:0;height:100%;background:var(--trust-tone);border-radius:inherit;transition:width .35s ease}
+  .trust-source-summary{margin:13px 0 2px;font-size:13px;line-height:1.45;color:var(--text)}
+  .trust-source-coverage{margin:0;font-size:11.5px;color:var(--muted)}
+  .trust-source details{margin-top:8px;border-top:1px solid var(--line)}
+  .trust-source summary{
+    min-height:44px;display:flex;align-items:center;width:max-content;max-width:100%;
+    color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;list-style:none;
+  }
+  .trust-source summary::-webkit-details-marker{display:none}
+  .trust-source summary::after{content:'›';margin-left:7px;font-size:16px;transition:transform .15s}
+  .trust-source details[open] summary::after{transform:rotate(90deg)}
+  .trust-source summary:hover,.trust-source summary:focus-visible{color:var(--accent)}
+  .trust-source summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:5px}
+  .trust-source-notes{display:grid;gap:7px;margin:0;padding:0 0 3px;list-style:none}
+  .trust-source-notes li{display:grid;grid-template-columns:16px 1fr;gap:7px;font-size:12px;line-height:1.4;color:var(--muted)}
+  .trust-source-notes i{font-style:normal;color:var(--trust-tone);font-weight:700}
+  .trust-source.loading .trust-source-head{margin-bottom:10px}
+  .trust-source-loading{margin:0 0 10px;font-size:13px;color:var(--muted)}
+  .trust-source-loading-line{height:4px;overflow:hidden;background:var(--line);border-radius:99px}
+  .trust-source-loading-line::after{content:'';display:block;width:36%;height:100%;background:var(--muted);border-radius:inherit;animation:trustScan 1.6s ease-in-out infinite}
+  @keyframes trustScan{0%{transform:translateX(-110%)}100%{transform:translateX(310%)}}
+  @media (max-width:520px){
+    .trust-source{padding:15px 15px 13px}
+    .trust-source-main{grid-template-columns:72px minmax(0,1fr);gap:12px}
+    .trust-source-score strong{font-size:34px}
+    .trust-source-label{font-size:13.5px}
+  }
+
   /* ---------- tags ---------- */
   .tags{display:none;margin:-6px 0 20px}
   .tags.on{display:block}
@@ -431,6 +482,15 @@
     <h2 class="doc-title" id="docTitle"></h2>
     <p class="doc-date" id="docDate" hidden></p>
 
+    <section class="trust-source" id="trustSource" aria-labelledby="trustSourceTitle" hidden>
+      <div class="trust-source-head">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 19 6v5.2c0 4.4-2.9 7.7-7 9.6-4.1-1.9-7-5.2-7-9.6V6l7-2.8Z"/><circle cx="12" cy="11.2" r="1.6"/><path d="M12 15.8h.01"/></svg>
+        <span class="trust-source-title" id="trustSourceTitle">Trust &amp; Source</span>
+        <span class="trust-source-version" id="trustVersion"></span>
+      </div>
+      <div id="trustSourceBody"></div>
+    </section>
+
     <div class="tags" id="tags">
       <div class="tags-head">
         <span>Focus the summary</span>
@@ -508,6 +568,17 @@
 </div>
 
 <script type="module">
+import {
+  TRUST_CACHE_TTL,
+  TRUST_METHOD_VERSION,
+  compactTrustResult,
+  expandCompactTrustResult,
+  extractTrustSignals,
+  normalizeModelTrustSignals,
+  normalizeTrustResult,
+  scoreTrustSignals,
+} from './trust-engine.js';
+
 /* ------------------------------------------------------------------ *
  * TLDR Me
  * Engine A: WebLLM (WebGPU) — Qwen2.5-0.5B-Instruct, instruction-tuned
@@ -527,6 +598,7 @@ const els = {
   results:$('results'), rail:$('rail'), dots:$('dots'), host:$('host'),
   docTitle:$('docTitle'), docDate:$('docDate'), readtime:$('readtime'), prev:$('prev'), next:$('next'),
   railLabel:$('railLabel'), swipeHint:$('swipeHint'),
+  trustSource:$('trustSource'), trustSourceBody:$('trustSourceBody'), trustVersion:$('trustVersion'),
   recents:$('recents'), recentsLabel:$('recentsLabel'), chips:$('chips'),
   recentsToggle:$('recentsToggle'), recentsCount:$('recentsCount'),
   clearRecents:$('clearRecents'), share:$('share'), toast:$('toast'),
@@ -619,7 +691,7 @@ async function loadPage(target){
       if (!res.ok) throw new Error(`${r.name} ${res.status}`);
       const body = await res.text();
       if (!body || body.length < 200) throw new Error(`${r.name} returned too little`);
-      const doc = r.kind === 'text' ? fromReaderText(body) : fromHTML(body);
+      const doc = r.kind === 'text' ? fromReaderText(body, target) : fromHTML(body, target);
       if (doc.text.length < 280) throw new Error(`${r.name}: not enough readable text`);
       return doc;
     } catch(e){ lastErr = e; }
@@ -628,11 +700,118 @@ async function loadPage(target){
 }
 
 // r.jina.ai returns "Title: …\nURL Source: …\n[Published Time: …]\nMarkdown Content:\n…"
-function fromReaderText(body){
+function safeUrl(value, base){
+  try {
+    const url = new URL(String(value || '').trim(), base);
+    return /^https?:$/.test(url.protocol) ? url.href : '';
+  } catch { return ''; }
+}
+
+function hostOf(value){
+  try { return new URL(value).hostname.replace(/^www\./, '').toLowerCase(); }
+  catch { return ''; }
+}
+
+function articleTypeLabel(text){
+  const sample = String(text || '').slice(0, 1600).toLowerCase();
+  if (/\b(sponsored|paid content|advertisement|advertorial)\b/.test(sample)) return 'sponsored';
+  if (/\b(opinion|editorial|commentary)\b/.test(sample)) return 'opinion';
+  if (/\b(analysis|explainer)\b/.test(sample)) return 'analysis';
+  if (/\b(satire|parody)\b/.test(sample)) return 'satire';
+  return 'unknown';
+}
+
+function classifyLink(url, text, sourceHost){
+  const host = hostOf(url), path = (() => { try { return new URL(url).pathname.toLowerCase(); } catch { return ''; } })();
+  const context = `${path} ${text}`;
+  if (/\b(facebook|instagram|twitter|x\.com|tiktok|linkedin|youtube)\.com$/i.test(host)) return 'social';
+  if ((/\.(gov|mil)$/i.test(host) || /(^|\.)(europa\.eu|un\.org|who\.int|sec\.gov|congress\.gov)$/i.test(host)) && (path !== '/' || String(text || '').trim().length >= 10)) return 'government';
+  if ((/\.edu$/i.test(host) || /(^|\.)(doi\.org|arxiv\.org|pubmed\.ncbi\.nlm\.nih\.gov|nature\.com|science\.org)$/i.test(host)) && /\b(study|research|paper|journal|data|report|findings?)\b/i.test(context)) return 'research';
+  if (/\.(pdf|csv|xlsx?|docx?)$/i.test(path) || /\b(court|filing|docket|transcript|dataset|report|records?)\b/i.test(context)) return 'document';
+  if (/\b(press[-_ ]release|official[-_ ]statement|regulation|legislation)\b/i.test(context) && host !== sourceHost) return 'primary';
+  // A generic external hyperlink is not evidence. It becomes a candidate news
+  // source only when its visible label or URL describes a reportable source.
+  if (host && host !== sourceHost && /\b(report|study|data|filing|record|document|source|research|analysis|investigation|interview|statement|article|news)\b/i.test(context)) return 'news';
+  if (/\b(shop|store|subscribe|pricing|product)\b/i.test(`${host} ${path}`)) return 'commercial';
+  return 'unknown';
+}
+
+function usefulLink(url, text){
+  const haystack = `${url} ${text}`.toLowerCase();
+  return !/\b(login|log-in|sign-in|signup|subscribe|account|advertis|tracking|share on|privacy|cookie|terms|recommended|related stories|newsletter)\b/.test(haystack)
+    && !/[?&](?:utm_|fbclid|gclid)/i.test(url);
+}
+
+function normalizeLinks(rawLinks, sourceUrl){
+  const sourceHost = hostOf(sourceUrl), seen = new Set();
+  return rawLinks.map(({ url, text }) => {
+    const resolved = safeUrl(url, sourceUrl);
+    if (!resolved || !usefulLink(resolved, text)) return null;
+    const cleanUrl = (() => { try { const u = new URL(resolved); u.hash = ''; return u.href; } catch { return resolved; } })();
+    if (seen.has(cleanUrl)) return null;
+    seen.add(cleanUrl);
+    const host = hostOf(cleanUrl);
+    return {
+      url: cleanUrl,
+      text: String(text || '').replace(/\s+/g, ' ').trim().slice(0, 180),
+      host,
+      sameDomain: !!host && host === sourceHost,
+      category: classifyLink(cleanUrl, text, sourceHost),
+    };
+  }).filter(Boolean).slice(0, 80);
+}
+
+function markdownLinks(markdown, sourceUrl){
+  return normalizeLinks([...String(markdown || '').matchAll(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)[^)]*\)/g)]
+    .map((m) => ({ text:m[1], url:m[2] })), sourceUrl);
+}
+
+function nameFrom(value){
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) return value.map(nameFrom).filter(Boolean).join(', ');
+  return String(value?.name || '').trim();
+}
+
+function ldNodes(doc){
+  const out = [];
+  const visit = (value) => {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)){ value.forEach(visit); return; }
+    out.push(value);
+    if (value['@graph']) visit(value['@graph']);
+  };
+  for (const script of doc.querySelectorAll('script[type="application/ld+json"]')){
+    try { visit(JSON.parse(script.textContent)); } catch {}
+  }
+  return out;
+}
+
+const ARTICLE_LD_TYPES = new Set(['newsarticle','article','reportagenewsarticle','analysisnewsarticle','opinionnewsarticle','blogposting']);
+function articleLdNode(nodes){
+  return nodes.find((node) => {
+    const types = Array.isArray(node?.['@type']) ? node['@type'] : [node?.['@type']];
+    return types.some((type) => ARTICLE_LD_TYPES.has(String(type || '').toLowerCase()));
+  }) || {};
+}
+
+function ldUrls(value){
+  const list = Array.isArray(value) ? value : value ? [value] : [];
+  return list.flatMap((item) => {
+    if (typeof item === 'string') return [item];
+    return [item?.url, item?.['@id']].filter(Boolean);
+  });
+}
+
+function fromReaderText(body, target){
   const title = (body.match(/^Title:\s*(.+)$/m) || [,''])[1].trim();
   const published = (body.match(/^Published Time:\s*(.+)$/m) || [,''])[1].trim();
+  const modified = (body.match(/^(?:Modified|Updated) Time:\s*(.+)$/m) || [,''])[1].trim();
+  const author = (body.match(/^Author:\s*(.+)$/m) || [,''])[1].trim();
+  const publisher = (body.match(/^(?:Publisher|Site Name):\s*(.+)$/m) || [,''])[1].trim();
+  const sourceUrl = safeUrl((body.match(/^URL Source:\s*(.+)$/m) || [,''])[1], target) || target;
   const split = body.split(/Markdown Content:\s*/);
   let md = (split.length > 1 ? split.slice(1).join('') : body);
+  const links = markdownLinks(md, sourceUrl);
   const text = md
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
@@ -641,34 +820,72 @@ function fromReaderText(body){
     .replace(/[*_`]/g, '')
     .replace(/\n{2,}/g, '\n\n')
     .trim();
-  return { title, published, text: clean(text) };
+  const articleType = articleTypeLabel(`${title}\n${md}`);
+  return {
+    title, published, modified, author, publisher, articleType,
+    articleSection:'', isAccessibleForFree:null, mainEntityOfPage:'', citations:[], sameAs:[],
+    text: clean(text), sourceUrl, sourceHost:hostOf(sourceUrl), links,
+    metadata: {
+      hasPublishedDate:!!published, hasModifiedDate:!!modified, hasAuthor:!!author,
+      hasPublisher:!!publisher, hasArticleType:articleType !== 'unknown',
+      hasStructuredData:false, hasCanonicalUrl:false, linksExtracted:true,
+    },
+  };
 }
 
-function fromHTML(html){
+function fromHTML(html, target){
   const doc = new DOMParser().parseFromString(html, 'text/html');
+  const nodes = ldNodes(doc), ld = articleLdNode(nodes);
+  const meta = (selector) => doc.querySelector(selector)?.content?.trim() || '';
+  const canonical = safeUrl(doc.querySelector('link[rel="canonical"]')?.href || ld.mainEntityOfPage?.['@id'] || ld.mainEntityOfPage, target);
+  const sourceUrl = canonical || target;
+  const originalRoot = doc.querySelector('article') || doc.querySelector('main') || doc.body;
+  const rawLinks = [...originalRoot.querySelectorAll('a[href]')].map((a) => ({ url:a.getAttribute('href'), text:a.textContent }));
+  ldUrls(ld.citation).concat(ldUrls(ld.sameAs)).forEach((url) => rawLinks.push({ url, text:'Structured citation' }));
+  const links = normalizeLinks(rawLinks, sourceUrl);
+  const published = publishedFromDOM(doc, ld);
+  const modified = String(ld.dateModified || meta('meta[property="article:modified_time"],meta[itemprop="dateModified"]')
+    || doc.querySelector('time[itemprop="dateModified"][datetime],time.updated[datetime]')?.getAttribute('datetime') || '').trim();
+  const author = nameFrom(ld.author) || meta('meta[name="author"],meta[property="article:author"]')
+    || doc.querySelector('[rel="author"],.byline,[class*="author"]')?.textContent?.replace(/^by\s+/i, '').trim() || '';
+  const publisher = nameFrom(ld.publisher) || meta('meta[property="og:site_name"],meta[name="publisher"],meta[name="application-name"]');
+  const citations = ldUrls(ld.citation).map((url) => safeUrl(url, sourceUrl)).filter(Boolean);
+  const sameAs = ldUrls(ld.sameAs).map((url) => safeUrl(url, sourceUrl)).filter(Boolean);
+  const ldType = (Array.isArray(ld['@type']) ? ld['@type'][0] : ld['@type']) || '';
+  const explicitType = `${ldType} ${ld.articleSection || ''} ${meta('meta[property="article:section"]')}`;
+  const articleType = /opinion/i.test(explicitType) ? 'opinion'
+    : /analysis/i.test(explicitType) ? 'analysis'
+      : /sponsor|advert/i.test(explicitType) ? 'sponsored'
+        : /newsarticle|reportagenewsarticle/i.test(explicitType) ? 'news'
+          : articleTypeLabel(`${explicitType} ${doc.title}`);
+  const title = String(ld.headline || meta('meta[property="og:title"]') || doc.querySelector('title')?.textContent || '').trim();
   doc.querySelectorAll('script,style,noscript,nav,header,footer,aside,form,iframe,svg,figure figcaption').forEach(n=>n.remove());
   const root = doc.querySelector('article') || doc.querySelector('main') || doc.body;
   const parts = [...root.querySelectorAll('h1,h2,h3,p,li')]
     .map(n => n.textContent.trim())
     .filter(t => t.length > 40);
-  const title = (doc.querySelector('meta[property="og:title"]')?.content
-               || doc.querySelector('title')?.textContent || '').trim();
-  return { title, published: publishedFromDOM(doc), text: clean(parts.join('\n\n') || root.textContent) };
+  return {
+    title, published, modified, author, publisher, articleType,
+    articleSection:String(ld.articleSection || '').trim(),
+    isAccessibleForFree:typeof ld.isAccessibleForFree === 'boolean' ? ld.isAccessibleForFree : null,
+    mainEntityOfPage:safeUrl(ld.mainEntityOfPage?.['@id'] || ld.mainEntityOfPage, sourceUrl),
+    citations, sameAs,
+    text: clean(parts.join('\n\n') || root.textContent), sourceUrl, sourceHost:hostOf(sourceUrl), links,
+    metadata: {
+      hasPublishedDate:!!published, hasModifiedDate:!!modified, hasAuthor:!!author,
+      hasPublisher:!!publisher, hasArticleType:!!ldType || articleType !== 'unknown',
+      hasStructuredData:nodes.length > 0, hasCanonicalUrl:!!canonical, linksExtracted:true,
+    },
+  };
 }
 
-function publishedFromDOM(doc){
+function publishedFromDOM(doc, preferredLd){
   const meta = doc.querySelector(
     'meta[property="article:published_time"],meta[itemprop="datePublished"],' +
     'meta[name="pubdate"],meta[name="publish-date"],meta[name="date"],meta[name="parsely-pub-date"]')?.content;
   if (meta) return meta.trim();
-  for (const s of doc.querySelectorAll('script[type="application/ld+json"]')){
-    try{
-      const o = JSON.parse(s.textContent);
-      for (const it of (Array.isArray(o) ? o : o['@graph'] || [o])){
-        if (it?.datePublished) return String(it.datePublished).trim();
-      }
-    } catch {}
-  }
+  if (preferredLd?.datePublished) return String(preferredLd.datePublished).trim();
+  for (const item of ldNodes(doc)) if (item?.datePublished) return String(item.datePublished).trim();
   return doc.querySelector('article time[datetime],time[datetime]')?.getAttribute('datetime')?.trim() || '';
 }
 
@@ -712,12 +929,31 @@ const CARD_PROPS = {
   takeaways:{ type:'array', minItems:3, maxItems:4, items:{ type:'string' } }
 };
 
+const TRUST_SIGNAL_SCHEMA = {
+  type:'object',
+  properties:{
+    articleType:{ type:'string', enum:['news','analysis','opinion','satire','sponsored','unknown'] },
+    namedSourceCount:{ type:'integer', minimum:0, maximum:20 },
+    anonymousSourceCount:{ type:'integer', minimum:0, maximum:20 },
+    attributedClaimLevel:{ type:'string', enum:['strong','moderate','weak','unknown'] },
+    uncertaintyDisclosed:{ type:'boolean' },
+    headlineBodyConsistency:{ type:'string', enum:['consistent','mixed','conflicting','unknown'] },
+    evidenceVsAllegationClear:{ type:'boolean' },
+  },
+  required:['articleType','namedSourceCount','anonymousSourceCount','attributedClaimLevel','uncertaintyDisclosed','headlineBodyConsistency','evidenceVsAllegationClear'],
+  additionalProperties:false,
+};
+
 // First pass also asks for the tags. Re-runs (focused on a tag) reuse the
 // original tags, so the chips don't shuffle under the user's finger.
 const SCHEMA = {
   type:'object',
-  properties:{ ...CARD_PROPS, tags:{ type:'array', minItems:10, maxItems:10, items:{ type:'string' } } },
-  required:['tldr','cards','takeaways','tags'], additionalProperties:false
+  properties:{
+    ...CARD_PROPS,
+    tags:{ type:'array', minItems:10, maxItems:10, items:{ type:'string' } },
+    trustSignals:TRUST_SIGNAL_SCHEMA,
+  },
+  required:['tldr','cards','takeaways','tags','trustSignals'], additionalProperties:false
 };
 
 const SCHEMA_FOCUS = {
@@ -744,7 +980,10 @@ ${lens}
   plain sentences.
 - takeaways: 3 short notable details, one line each, not restatements of the tldr.${focus?.length ? '' : `
 - tags: exactly 10 short topic tags (1-2 words each) naming the themes, people,
-  places, or technologies the article actually covers. No hashtags, no duplicates.`}
+  places, or technologies the article actually covers. No hashtags, no duplicates.
+- trustSignals: extract observable article-level signals only. Use only information present
+  in the supplied article. Do not assume publisher reputation, invent sources, judge political
+  correctness, or provide a final trust score. Return "unknown" when evidence is insufficient.`}
 
 Use plain language. Use only facts stated in the article. Do not repeat the tldr in the cards.
 
@@ -761,7 +1000,7 @@ async function summarizeWebLLM(doc, focus = [], attempt = 0){
     // inside a string — the grammar can't prevent that — until max_tokens cuts
     // the JSON off mid-structure. The frequency penalty makes loops rare; the
     // retry re-rolls hotter to escape one.
-    temperature: attempt ? 0.7 : 0.3, max_tokens: 1200,
+    temperature: attempt ? 0.45 : 0.2, max_tokens: 1350,
     frequency_penalty: 0.5,
     response_format: { type:'json_object', schema: JSON.stringify(focus.length ? SCHEMA_FOCUS : SCHEMA) },
   });
@@ -922,6 +1161,7 @@ function normalize(o){
     cards: cards.length ? cards : [{ heading:'Summary', body: tldr || 'No summary available.' }],
     takeaways,
     tags,
+    trustSignals: normalizeModelTrustSignals(o.trustSignals),
   };
 }
 
@@ -955,6 +1195,213 @@ function readTime(text){
   return `${m} min read`;
 }
 
+/* ---------------- trust & source ---------------- */
+let trustSeq = 0;
+let trustControllers = [];
+
+function cancelTrustChecks(){
+  trustControllers.forEach((controller) => controller.abort());
+  trustControllers = [];
+}
+
+function trustState(result){
+  if (!result.sufficientInformation) return 'unknown';
+  if (result.score >= 85) return 'strong';
+  if (result.score >= 70) return 'supported';
+  if (result.score >= 50) return 'mixed';
+  if (result.score >= 30) return 'limited';
+  return 'concern';
+}
+
+function clearTrustSource(){
+  els.trustSource.hidden = true;
+  els.trustSource.className = 'trust-source';
+  els.trustSourceBody.replaceChildren();
+  els.trustVersion.textContent = '';
+}
+
+function renderTrustSourceLoading(){
+  els.trustSource.hidden = false;
+  els.trustSource.className = 'trust-source loading state-unknown';
+  els.trustVersion.textContent = '';
+  els.trustSourceBody.innerHTML = `<p class="trust-source-loading">Analyzing available signals…</p>
+    <div class="trust-source-loading-line" aria-hidden="true"></div>`;
+  els.trustSource.setAttribute('aria-label', 'Trust and Source analysis in progress');
+}
+
+function renderTrustSourceUnavailable(message = 'Assessment unavailable'){
+  els.trustSource.hidden = false;
+  els.trustSource.className = 'trust-source state-unknown';
+  els.trustVersion.textContent = `Method v${TRUST_METHOD_VERSION}`;
+  els.trustSourceBody.innerHTML = `<div class="trust-source-main">
+      <div class="trust-source-score"><strong>?</strong></div>
+      <div class="trust-source-result"><strong class="trust-source-label">Assessment unavailable</strong>
+        <div class="trust-source-meter" aria-hidden="true"><span></span></div></div>
+    </div><p class="trust-source-summary"></p>`;
+  els.trustSourceBody.querySelector('.trust-source-summary').textContent = message;
+  els.trustSource.setAttribute('aria-label', `Trust and Source assessment unavailable. ${message}`);
+}
+
+function renderTrustSource(value, sourceNote = ''){
+  const result = normalizeTrustResult(value);
+  const state = trustState(result);
+  const scoreText = result.sufficientInformation ? String(result.score) : '?';
+  const scoreSuffix = result.sufficientInformation ? '<span>/100</span>' : '';
+  const meterValue = result.sufficientInformation ? result.score : 0;
+  const coverage = `Based on ${result.coveragePercent}% available signals${sourceNote ? ` · ${sourceNote}` : ''}`;
+  els.trustSource.hidden = false;
+  els.trustSource.className = `trust-source state-${state}`;
+  els.trustVersion.textContent = `Method v${result.methodologyVersion}`;
+  els.trustSourceBody.innerHTML = `<div class="trust-source-main">
+      <div class="trust-source-score"><strong></strong>${scoreSuffix}</div>
+      <div class="trust-source-result">
+        <strong class="trust-source-label"></strong>
+        <div class="trust-source-meter" role="meter" aria-valuemin="0" aria-valuemax="100"><span></span></div>
+      </div>
+    </div>
+    <p class="trust-source-summary"></p>
+    <p class="trust-source-coverage"></p>`;
+  els.trustSourceBody.querySelector('.trust-source-score strong').textContent = scoreText;
+  els.trustSourceBody.querySelector('.trust-source-label').textContent = result.label;
+  els.trustSourceBody.querySelector('.trust-source-summary').textContent = result.summary;
+  els.trustSourceBody.querySelector('.trust-source-coverage').textContent = coverage;
+  const meter = els.trustSourceBody.querySelector('.trust-source-meter');
+  meter.querySelector('span').style.width = `${meterValue}%`;
+  if (result.sufficientInformation){
+    meter.setAttribute('aria-valuenow', String(result.score));
+    meter.setAttribute('aria-label', `Trust and Source score: ${result.score} out of 100`);
+  } else {
+    meter.removeAttribute('role');
+    meter.removeAttribute('aria-valuemin');
+    meter.removeAttribute('aria-valuemax');
+    meter.setAttribute('aria-label', 'Trust and Source score unavailable because information was limited');
+  }
+
+  if (result.signals.length){
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = 'Why this score?';
+    const list = document.createElement('ul');
+    list.className = 'trust-source-notes';
+    result.signals.forEach((signal) => {
+      const li = document.createElement('li');
+      const icon = document.createElement('i');
+      icon.textContent = signal.type === 'positive' ? '✓' : signal.type === 'limitation' ? '△' : '—';
+      const text = document.createElement('span');
+      text.textContent = signal.label;
+      li.append(icon, text); list.append(li);
+    });
+    details.append(summary, list);
+    els.trustSourceBody.append(details);
+  }
+
+  els.trustSource.setAttribute('aria-label', result.sufficientInformation
+    ? `Trust and Source score: ${result.score} out of 100. ${result.label}. Assessment based on ${result.coveragePercent} percent of available signals.`
+    : `Trust and Source assessment unavailable. Limited information was available. Assessment coverage: ${result.coveragePercent} percent.`);
+}
+
+function normalizedTrustUrl(value){
+  try { const url = new URL(value); url.hash = ''; return url.href; }
+  catch { return String(value || ''); }
+}
+
+async function trustCacheKey(url){
+  const normalized = normalizedTrustUrl(url);
+  if (globalThis.crypto?.subtle){
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
+    return `tldrme:trust:v${TRUST_METHOD_VERSION}:` + [...new Uint8Array(digest)].slice(0, 12).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  let hash = 2166136261;
+  for (const char of normalized) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  return `tldrme:trust:v${TRUST_METHOD_VERSION}:${(hash >>> 0).toString(36)}`;
+}
+
+async function readTrustCache(url){
+  try {
+    const raw = JSON.parse(localStorage.getItem(await trustCacheKey(url)) || 'null');
+    if (!raw || raw.v !== TRUST_METHOD_VERSION || !raw.result) return null;
+    return { result:normalizeTrustResult(raw.result), fresh:Number(raw.expiresAt) > Date.now() };
+  } catch { return null; }
+}
+
+async function writeTrustCache(url, result){
+  try {
+    localStorage.setItem(await trustCacheKey(url), JSON.stringify({
+      v:TRUST_METHOD_VERSION, expiresAt:Date.now() + TRUST_CACHE_TTL,
+      result:normalizeTrustResult(result),
+    }));
+  } catch {}
+}
+
+async function fetchPublisherPage(url){
+  const ctrl = new AbortController();
+  trustControllers.push(ctrl);
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const res = await fetch(READERS[0].url(url), { signal:ctrl.signal, headers:{ Accept:'text/plain' } });
+    if (!res.ok) return '';
+    return (await res.text()).slice(0, 16000);
+  } catch { return ''; }
+  finally {
+    clearTimeout(timer);
+    trustControllers = trustControllers.filter((controller) => controller !== ctrl);
+  }
+}
+
+async function checkPublisherTransparency(article, seq){
+  const base = safeUrl(article.sourceUrl || '', article.sourceUrl || '');
+  if (!base) return {};
+  const origin = new URL(base).origin;
+  const [about, contact, standards] = await Promise.all([
+    fetchPublisherPage(`${origin}/about`),
+    fetchPublisherPage(`${origin}/contact`),
+    fetchPublisherPage(`${origin}/editorial-standards`),
+  ]);
+  if (seq !== trustSeq) return {};
+  return {
+    aboutAssessed:!!about,
+    ownershipDisclosed:/\b(owned by|ownership|operated by|parent company|nonprofit|organization)\b/i.test(about),
+    editorialLeadership:/\b(editor|editorial team|masthead|newsroom|leadership)\b/i.test(about),
+    fundingDisclosed:/\b(funding|funded by|donor|partners?|conflict of interest)\b/i.test(about),
+    contactAssessed:!!contact,
+    contactAvailable:/\b(contact|email|phone|address|newsroom)\b/i.test(contact),
+    standardsAssessed:!!standards,
+    correctionsPolicy:/\b(correction|clarification|editorial standards|ethics)\b/i.test(standards),
+  };
+}
+
+function applyTrustResult(result, meta, sourceNote = ''){
+  if (!meta) return;
+  meta.trust = normalizeTrustResult(result);
+  meta.trustNote = sourceNote;
+  renderTrustSource(meta.trust, sourceNote);
+  if (shared?.meta === meta) refreshShareUrl();
+}
+
+async function completeTrustAnalysis(article, summary, meta, seq, cachePromise, checksPromise){
+  try {
+    const cached = await cachePromise;
+    if (seq !== trustSeq) return;
+    if (cached?.fresh){ applyTrustResult(cached.result, meta); return; }
+    if (cached?.result) applyTrustResult(cached.result, meta, 'Assessment may be outdated');
+
+    const localSignals = extractTrustSignals(article, meta.url, engine === 'webllm' ? summary.trustSignals : null);
+    const localResult = scoreTrustSignals(localSignals);
+    if (seq !== trustSeq) return;
+    applyTrustResult(localResult, meta);
+
+    const checks = await checksPromise;
+    if (seq !== trustSeq || !checks) return;
+    const finalSignals = extractTrustSignals(article, meta.url, engine === 'webllm' ? summary.trustSignals : null, checks);
+    const finalResult = scoreTrustSignals(finalSignals);
+    applyTrustResult(finalResult, meta);
+    await writeTrustCache(meta.url, finalResult);
+  } catch (error){
+    console.warn('Trust & Source assessment failed', error);
+    if (seq === trustSeq && !meta.trust) renderTrustSourceUnavailable('The summary is ready, but the sourcing signals could not be assessed.');
+  }
+}
+
 /* ---------------- 4. render swipeable cards ---------------- */
 function renderCards(nodes){
   els.rail.replaceChildren(...nodes);
@@ -983,6 +1430,8 @@ function skeleton(keepMeta){
     els.docTitle.textContent = 'Reading and summarizing…';
     els.host.textContent = ''; els.readtime.textContent = '';
     els.docDate.textContent = ''; els.docDate.hidden = true;
+    clearTrustSource();
+    renderTrustSourceLoading();
   }
   els.railLabel.textContent = 'Working locally';
   els.swipeHint.textContent = 'The model is running on your device — this can take a moment.';
@@ -1028,6 +1477,8 @@ function build(summary, meta){
   const published = formatPublished(meta.published);
   els.docDate.textContent = published ? 'Published ' + published : '';
   els.docDate.hidden = !published;
+  if (meta.trust) renderTrustSource(meta.trust, meta.trustNote || '');
+  else if (meta.trustUnavailable) renderTrustSourceUnavailable(meta.trustUnavailable);
   els.railLabel.textContent = `${cards.length} cards`;
   els.swipeHint.textContent = 'Swipe or use ← → to move between cards';
 
@@ -1294,6 +1745,9 @@ async function regenerate(){
   }
 
   busy = true;
+  cancelTrustChecks();
+  const assessmentSeq = ++trustSeq;
+  const cachedTrust = readTrustCache(target);
   els.go.disabled = true;
   skeleton(true);
   els.tags.classList.add('on');
@@ -1439,6 +1893,7 @@ async function shareLink(){
       k: shared.summary.takeaways,
       g: current.tags || [],          // tags travel too, so a recipient can refocus
       f: current.focus || [],
+      x: compactTrustResult(shared.meta.trust),
     });
     const packed = b64url.enc(await deflate(payload));
     return packed.length > MAX_FRAGMENT ? base : `${base}#s=${packed}`;
@@ -1453,6 +1908,8 @@ async function readSharedSummary(){
   if (!frag || !('DecompressionStream' in window)) return { url, summary: null };
   try {
     const o = JSON.parse(await inflate(b64url.dec(frag)));
+    const trust = expandCompactTrustResult(o.x);
+    const trustIsOld = trust && Date.now() - Date.parse(trust.assessedAt) > TRUST_CACHE_TTL;
     return {
       url,
       summary: normalize({
@@ -1461,7 +1918,11 @@ async function readSharedSummary(){
         takeaways: o.k || [],
         tags: o.g || [],
       }),
-      meta: { title: o.t, url, read: o.r, published: o.p || '' },
+      meta: {
+        title:o.t, url, read:o.r, published:o.p || '', trust,
+        trustNote:trust ? `Assessment included in shared summary${trustIsOld ? ' · may be outdated' : ''}` : '',
+        trustUnavailable:trust ? '' : 'Assessment not included in this shared summary.',
+      },
       focus: Array.isArray(o.f) ? o.f.slice(0, MAX_TAGS) : [],
     };
   } catch { return { url, summary: null }; }
@@ -1525,6 +1986,10 @@ els.form.addEventListener('submit', async (e) => {
 
   try{
     const doc = await loadPage(target);
+    // Local heuristics are available immediately; optional publisher checks run
+    // alongside summarization and never block the cards.
+    extractTrustSignals(doc, target);
+    const publisherChecks = cachedTrust.then((cached) => cached?.fresh ? null : checkPublisherTransparency(doc, assessmentSeq));
     hint(`Summarizing on your device (${engine === 'webllm' ? 'GPU' : 'CPU'})…`);
     if (engine === 'webllm') progress(0.35);
     const summary = await summarize(doc);
@@ -1534,12 +1999,14 @@ els.form.addEventListener('submit', async (e) => {
     current = { base: summary, meta, tags: summary.tags || [], article: doc, focus: [] };
     build(summary, meta);
     renderTags();
+    completeTrustAnalysis(doc, summary, meta, assessmentSeq, cachedTrust, publisherChecks);
     rememberUrl(target, doc.title);
     hint('Done. Pick a tag to refocus, or paste another link.');
   } catch(err){
     console.error(err);
     progress(null);
     els.results.classList.remove('on');
+    if (assessmentSeq === trustSeq) clearTrustSource();
     hint(err.message || 'Something went wrong reading that page.', true);
   } finally {
     busy = false;

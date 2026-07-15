@@ -11,10 +11,12 @@ Paste a link, get a swipeable summary. The summarizing model runs **entirely in 
 No build step, no bundler, no backend, no API key.
 
 ```
-index.html              the entire app — UI, engines, summarization
+index.html              main app — UI, engines, fetching, summarization
+trust-engine.js         deterministic Trust & Source signal scoring
 manifest.webmanifest    PWA metadata, so Android can install it
 sw.js                   service worker: makes it installable + caches the shell
 icons/                  app icons (generated, safe to regenerate)
+scripts/                 icon tooling + Trust & Source unit tests
 ```
 
 ---
@@ -89,7 +91,7 @@ const GPU_MODEL = 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC';   // ~1.1 GB, noticeably 
 
 ## Customizing
 
-Everything lives in `index.html`.
+The interface, fetching, and summarization paths live in `index.html`; the pure, unit-testable Trust & Source scorer lives in `trust-engine.js`.
 
 - **Models** — `GPU_MODEL` / `CPU_MODEL` constants at the top of the script.
 - **How the page is fetched** — the `READERS` array.
@@ -115,6 +117,32 @@ Three implementation notes, since none of this is free:
 Tags travel inside share links too, so a recipient can refocus a summary you sent them.
 
 Tag quality tracks model quality: the 0.5B model occasionally invents a tag that isn't really in the article. The 1.5B swap noted above helps here.
+
+---
+
+## Trust & Source
+
+TLDR Me evaluates observable sourcing, attribution, publisher transparency, article freshness, and available corroboration. The meter describes the strength of the available signals; it is **not a truth verdict** and is not a substitute for a professional fact-check.
+
+The final score is calculated locally with deterministic JavaScript rules. The local model may extract structured observations from the article, but it never chooses the score. The five weighted categories are:
+
+| Category | Weight |
+|---|---:|
+| Evidence and references | 30 |
+| Attribution and reporting clarity | 20 |
+| Publisher transparency | 20 |
+| Freshness and content integrity | 15 |
+| Independent corroboration actually identified | 15 |
+
+The score is normalized against the points the browser could genuinely assess. Coverage of 70–84% receives a 3-point uncertainty adjustment; coverage of 50–69% receives a 7-point adjustment and caps the result at 79. Below 50% coverage, the interface shows a question mark and **Limited information available** instead of presenting a weakly supported number.
+
+WebLLM can classify compact semantic signals such as named sourcing, uncertainty, article type, and headline/body consistency. The WASM fallback cannot reliably follow that structured prompt, so it uses conservative JavaScript heuristics for quotations, attribution language, metadata, dates, labels, and evidence links. Both paths use the same final scoring function and methodology version. Missing or unconfirmed corroboration is left unassessed rather than invented.
+
+The assessment excludes political viewpoint, publisher fame, audience size, domain age, and social popularity. A small publication with strong primary evidence can therefore outscore a well-known publication with weak sourcing. A trust signal describes what was observable in this article and its source pages; a professional fact-check investigates whether a particular claim is accurate using additional reporting.
+
+Trust analysis stays on the device. Article URLs already pass through the configured reader proxies, and up to three optional publisher-accountability page checks may use the same proxy. No score is uploaded to a scoring service. Assessments are cached in `localStorage` for 24 hours by a hash of the normalized article URL; full article text is never stored in that cache.
+
+Limitations: reader proxies can omit metadata or links, publisher pages may be unavailable, and local language-model observations can be imperfect. The coverage line makes those gaps visible, and the “Why this score?” disclosure lists concise evidence and limitations without claiming that the article is true, false, unbiased, or verified.
 
 ---
 

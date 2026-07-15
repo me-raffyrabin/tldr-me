@@ -62,6 +62,7 @@ desktop.ini
 # Headless Chrome profiles used by scripts/make-icons.mjs and manual testing.
 chrome-profile/
 .chrome-icons-profile/
+.playwright-cli/
 .tmp/
 scratch/
 coverage/
